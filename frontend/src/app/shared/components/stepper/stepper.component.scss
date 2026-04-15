@@ -1,0 +1,134 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border-soft);
+}
+
+.paso {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  min-width: 0;
+
+  &.deshabilitado {
+    .circulo {
+      background: var(--color-bg-soft);
+      color: var(--color-text-soft);
+      border-color: var(--color-border);
+    }
+    .meta .titulo {
+      color: var(--color-text-soft);
+    }
+  }
+
+  &.activo {
+    .circulo {
+      background: var(--color-primary);
+      color: var(--color-white);
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 4px var(--color-primary-soft);
+    }
+    .meta .titulo {
+      color: var(--color-primary-dark);
+      font-weight: 700;
+    }
+  }
+
+  &.completado {
+    .circulo {
+      background: var(--color-success);
+      color: var(--color-white);
+      border-color: var(--color-success);
+    }
+    .meta .titulo {
+      color: var(--color-text);
+    }
+  }
+}
+
+.circulo {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--color-bg-soft);
+  color: var(--color-text-soft);
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  transition: background 0.2s ease, color 0.2s ease, border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.check {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  .rotulo {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-soft);
+  }
+
+  .titulo {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.conector {
+  position: absolute;
+  right: -20px;
+  left: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  width: 40px;
+  background: var(--color-border);
+
+  &.completado {
+    background: var(--color-success);
+  }
+}
+
+.paso:last-child .conector {
+  display: none;
+}
+
+.paso {
+  padding-right: 40px;
+}
+.paso:last-child {
+  padding-right: 0;
+  flex: 0 0 auto;
+}
