@@ -1,16 +1,18 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
+import { Observable, firstValueFrom, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   ArchivoSubido,
   Codificacion,
   Delimitador,
   SeparadorDecimal,
+  UploadRespuesta,
   detectarTipoArchivo,
 } from '../models/archivo.model';
 import { ConfiguracionProceso, PROCESO_VACIO } from '../models/config.model';
 import { CAMPOS_ESTANDAR, MapeoArchivo } from '../models/mapeo.model';
+import { OrigenDatos, esOrigenCompleto } from '../models/origen.model';
 import { ResultadoImportacion } from '../models/resultado.model';
 
 const API_URL = 'http://localhost:8000/api';
@@ -23,13 +25,17 @@ export class ImportadorService {
   private readonly _proceso = signal<ConfiguracionProceso>({ ...PROCESO_VACIO });
   private readonly _procesoGuardado = signal<boolean>(false);
   private readonly _mapeos = signal<MapeoArchivo[]>([]);
+  private readonly _origen = signal<OrigenDatos | null>(null);
   private readonly _resultado = signal<ResultadoImportacion | null>(null);
+  private readonly _subiendo = signal<boolean>(false);
 
   readonly archivos = this._archivos.asReadonly();
   readonly proceso = this._proceso.asReadonly();
   readonly procesoGuardado = this._procesoGuardado.asReadonly();
   readonly mapeos = this._mapeos.asReadonly();
+  readonly origen = this._origen.asReadonly();
   readonly resultado = this._resultado.asReadonly();
+  readonly subiendo = this._subiendo.asReadonly();
 
   readonly todosConfigurados = computed(() => {
     const archivos = this._archivos();
@@ -47,27 +53,63 @@ export class ImportadorService {
     );
   });
 
-  readonly puedeIrAPaso2 = computed(() => this._archivos().length > 0);
+  readonly puedeIrAPaso2 = computed(
+    () =>
+      !this._subiendo() &&
+      this._archivos().length > 0 &&
+      this._archivos().every((a) => !!a.rutaServidor),
+  );
   readonly puedeIrAPaso3 = computed(
     () => this._procesoGuardado() && this.todosConfigurados(),
   );
   readonly puedeIrAPaso4 = computed(() => {
     const mapeos = this._mapeos();
-    if (mapeos.length === 0 || mapeos.length !== this._archivos().length) return false;
+    const archivos = this._archivos();
+    if (archivos.length === 0 || mapeos.length !== archivos.length) return false;
     return mapeos.every((m) => {
       if (m.columnaClave === null) return false;
-      const obligatoriasCubiertas = CAMPOS_ESTANDAR.filter((c) => c.obligatorio).every((c) =>
+      const archivo = archivos.find((a) => a.id === m.archivoId);
+      if (!archivo) return false;
+      if (archivo.orden !== 1) return true;
+      return CAMPOS_ESTANDAR.filter((c) => c.obligatorio).every((c) =>
         m.mapeos.some((mp) => mp.destino === c.nombre),
       );
-      return obligatoriasCubiertas;
     });
   });
+  readonly origenCompleto = computed(() => esOrigenCompleto(this._origen()));
+  readonly puedeIrAPaso5 = computed(() => this.puedeIrAPaso4() && this.origenCompleto());
 
-  agregarArchivos(files: File[]): Promise<void> {
-    const nuevos = files.map((f, idx) => this.crearArchivoBase(f, this._archivos().length + idx + 1));
-    return Promise.all(nuevos.map((n) => this.leerVistaPrevia(n))).then((procesados) => {
-      this._archivos.update((arr) => [...arr, ...procesados]);
-    });
+  async agregarArchivos(files: File[]): Promise<void> {
+    const base = files.map((f, idx) =>
+      this.crearArchivoBase(f, this._archivos().length + idx + 1),
+    );
+    this._subiendo.set(true);
+    try {
+      const conPrevia = await Promise.all(base.map((n) => this.leerVistaPrevia(n)));
+      const subidos = await Promise.all(
+        conPrevia.map((archivo, idx) => this.subirAlServidor(archivo, base[idx]!._raw)),
+      );
+      this._archivos.update((arr) => [...arr, ...subidos]);
+    } finally {
+      this._subiendo.set(false);
+    }
+  }
+
+  private async subirAlServidor(archivo: ArchivoSubido, file: File): Promise<ArchivoSubido> {
+    const form = new FormData();
+    form.append('archivos', file, archivo.nombre);
+    const respuesta = await firstValueFrom(
+      this.http.post<UploadRespuesta>(`${API_URL}/upload`, form),
+    );
+    const subido = respuesta.archivos[0];
+    if (!subido) return archivo;
+    return {
+      ...archivo,
+      archivoIdServidor: subido.archivoId,
+      rutaServidor: subido.ruta,
+      codificacion: (subido.codificacionDetectada as Codificacion) ?? archivo.codificacion,
+      delimitador: (subido.delimitadorDetectado as Delimitador) ?? archivo.delimitador,
+    };
   }
 
   eliminarArchivo(id: string): void {
@@ -187,10 +229,25 @@ export class ImportadorService {
       .pipe(catchError(() => of({ ok: true })));
   }
 
+  definirOrigen(origen: OrigenDatos | null): void {
+    this._origen.set(origen);
+  }
+
+  actualizarOrigen(parcial: Partial<OrigenDatos>): void {
+    this._origen.update((actual) => {
+      if (actual === null) return actual;
+      return { ...actual, ...parcial } as OrigenDatos;
+    });
+  }
+
   procesar(): Observable<ResultadoImportacion> {
+    const archivos = this._archivos().map((a) => ({
+      ...a,
+      ruta: a.rutaServidor ?? '',
+    }));
     const payload = {
       proceso: this._proceso(),
-      archivos: this._archivos(),
+      archivos,
       mapeos: this._mapeos(),
     };
     return this.http.post<ResultadoImportacion>(`${API_URL}/procesar`, payload).pipe(
@@ -215,6 +272,7 @@ export class ImportadorService {
     this._proceso.set({ ...PROCESO_VACIO });
     this._procesoGuardado.set(false);
     this._mapeos.set([]);
+    this._origen.set(null);
     this._resultado.set(null);
   }
 

@@ -242,7 +242,7 @@ export class Step4ConfirmarComponent {
   }
 
   volver(): void {
-    void this.router.navigate(['/importador/columnas']);
+    void this.router.navigate(['/importador/origen']);
   }
 
   nuevaImportacion(): void {

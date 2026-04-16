@@ -1,11 +1,11 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from models.camel_base import CamelModel
 
 TipoArchivo = Literal["csv", "txt", "xlsx", "xml", "json"]
 
 
-class ArchivoMetadata(BaseModel):
+class ArchivoMetadata(CamelModel):
     archivo_id: str
     nombre: str
     tipo: TipoArchivo
@@ -15,5 +15,5 @@ class ArchivoMetadata(BaseModel):
     delimitador_detectado: str | None = None
 
 
-class UploadResponse(BaseModel):
+class UploadResponse(CamelModel):
     archivos: list[ArchivoMetadata]

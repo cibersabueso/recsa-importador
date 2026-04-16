@@ -54,7 +54,8 @@ export class ImportadorComponent {
     if (url.includes('/subir')) return 1;
     if (url.includes('/formato')) return 2;
     if (url.includes('/columnas')) return 3;
-    if (url.includes('/confirmar')) return 4;
+    if (url.includes('/origen')) return 4;
+    if (url.includes('/confirmar')) return 5;
     return 1;
   });
 
@@ -74,9 +75,15 @@ export class ImportadorComponent {
     },
     {
       id: 4,
+      titulo: 'Origen de datos',
+      ruta: '/importador/origen',
+      habilitado: this.importador.puedeIrAPaso4(),
+    },
+    {
+      id: 5,
       titulo: 'Confirmar',
       ruta: '/importador/confirmar',
-      habilitado: this.importador.puedeIrAPaso4(),
+      habilitado: this.importador.puedeIrAPaso5(),
     },
   ]);
 

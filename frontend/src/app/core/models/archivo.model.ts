@@ -16,6 +16,22 @@ export interface ArchivoSubido {
   columnas: string[];
   previsualizacion: string[][];
   columnaClave: string | null;
+  archivoIdServidor?: string;
+  rutaServidor?: string;
+}
+
+export interface UploadArchivoRespuesta {
+  archivoId: string;
+  nombre: string;
+  tipo: TipoArchivo;
+  tamano: number;
+  ruta: string;
+  codificacionDetectada: string | null;
+  delimitadorDetectado: string | null;
+}
+
+export interface UploadRespuesta {
+  archivos: UploadArchivoRespuesta[];
 }
 
 export type Delimitador = ';' | ',' | '|' | '\t';

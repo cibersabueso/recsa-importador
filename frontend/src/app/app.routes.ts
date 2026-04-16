@@ -38,6 +38,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'origen',
+        loadComponent: () =>
+          import('./features/importador/step4-origen/step4-origen.component').then(
+            (m) => m.Step4OrigenComponent,
+          ),
+      },
+      {
         path: 'confirmar',
         loadComponent: () =>
           import('./features/importador/step4-confirmar/step4-confirmar.component').then(

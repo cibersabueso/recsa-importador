@@ -63,7 +63,7 @@ import { CAMPOS_ESTANDAR, Mapeo, MapeoArchivo } from '../../../core/models/mapeo
                 class="chip-campo"
                 [ngClass]="{
                   cubierto: campoCubierto(campo.nombre),
-                  faltante: campo.obligatorio && !campoCubierto(campo.nombre)
+                  faltante: esPrincipalActivo() && campo.obligatorio && !campoCubierto(campo.nombre)
                 }"
               >
                 <span class="chip-punto"></span>
@@ -80,6 +80,14 @@ import { CAMPOS_ESTANDAR, Mapeo, MapeoArchivo } from '../../../core/models/mapeo
           <div class="alert alert-warning">
             <strong>Columna clave pendiente:</strong> selecciona la columna que se usará para
             vincular este archivo con los demás.
+          </div>
+        }
+
+        @if (!esPrincipalActivo()) {
+          <div class="alert alert-info">
+            <strong>Archivo secundario:</strong> sólo la columna clave es obligatoria. Los
+            campos estándar son opcionales y se cruzarán con el archivo principal cuando
+            exista coincidencia.
           </div>
         }
 
@@ -286,9 +294,12 @@ export class Step3ColumnasComponent {
 
   readonly mapeosActivos = computed<Mapeo[]>(() => this.mapeoActivo()?.mapeos ?? []);
 
+  readonly esPrincipalActivo = computed(() => this.archivoActivo()?.orden === 1);
+
   readonly faltantes = computed(() => {
     const mp = this.mapeoActivo();
     if (!mp) return [];
+    if (!this.esPrincipalActivo()) return [];
     return CAMPOS_ESTANDAR.filter(
       (c) => c.obligatorio && !mp.mapeos.some((m) => m.destino === c.nombre),
     );
@@ -382,6 +393,8 @@ export class Step3ColumnasComponent {
     const mp = this.mapeos().find((m) => m.archivoId === id);
     if (!mp) return 'incompleto';
     if (mp.columnaClave === null) return 'incompleto';
+    const archivo = this.archivos().find((a) => a.id === id);
+    if (archivo?.orden !== 1) return 'completo';
     const ok = CAMPOS_ESTANDAR.filter((c) => c.obligatorio).every((c) =>
       mp.mapeos.some((m) => m.destino === c.nombre),
     );
@@ -395,6 +408,6 @@ export class Step3ColumnasComponent {
   continuar(): void {
     if (!this.puedeAvanzar()) return;
     this.importador.guardarMapeo().subscribe();
-    void this.router.navigate(['/importador/confirmar']);
+    void this.router.navigate(['/importador/origen']);
   }
 }

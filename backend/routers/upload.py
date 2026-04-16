@@ -8,7 +8,7 @@ from services.file_service import guardar_archivo
 router = APIRouter(prefix="/api", tags=["upload"])
 
 
-@router.post("/upload", response_model=UploadResponse)
+@router.post("/upload", response_model=UploadResponse, response_model_by_alias=True)
 async def subir_archivos(archivos: list[UploadFile] = File(...)) -> UploadResponse:
     if not archivos:
         raise HTTPException(

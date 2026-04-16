@@ -30,16 +30,12 @@ def configurar_proceso(config: ProcesoConfig) -> ConfigResponse:
 
 @router.post("/archivo", response_model=ConfigResponse)
 def configurar_archivo(config: ArchivoConfig) -> ConfigResponse:
-    metadata = obtener_archivo(config.archivo_id)
-    if metadata is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Archivo no encontrado: {config.archivo_id}",
-        )
     guardar_archivo_config(config)
+    metadata = obtener_archivo(config.archivo_id)
+    nombre = metadata.nombre if metadata is not None else config.archivo_id
     return ConfigResponse(
         ok=True,
-        mensaje=f"Configuración guardada para archivo {metadata.nombre}",
+        mensaje=f"Configuración guardada para archivo {nombre}",
     )
 
 
