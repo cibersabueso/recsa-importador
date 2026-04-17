@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ import pandas as pd
 
 EXTENSIONES_SOPORTADAS = {"csv", "txt", "xlsx", "xml", "json"}
 DELIMITADORES_POSIBLES = [";", ",", "|", "\t"]
+TIPOS_DELIMITADOS = {"csv", "txt"}
+CHUNK_SIZE_DEFAULT = 10000
 
 
 def detectar_tipo(nombre: str) -> str:
@@ -174,3 +177,63 @@ def _a_texto(valor: Any) -> str | None:
         return None
     texto = str(valor).strip()
     return texto if texto else None
+
+
+def contar_lineas(ruta: Path) -> int:
+    total = 0
+    with ruta.open("rb") as handle:
+        for _ in handle:
+            total += 1
+    return total
+
+
+def es_tipo_delimitado(tipo: str) -> bool:
+    return tipo in TIPOS_DELIMITADOS
+
+
+def leer_archivo_chunks(
+    ruta: Path,
+    tipo: str,
+    delimitador: str,
+    codificacion: str,
+    tiene_encabezados: bool,
+    chunksize: int = CHUNK_SIZE_DEFAULT,
+) -> Iterator[tuple[list[str], list[dict[str, Any]]]]:
+    encoding = _mapear_codificacion(codificacion)
+    if tipo in TIPOS_DELIMITADOS:
+        yield from _leer_delimitado_chunks(
+            ruta, delimitador, encoding, tiene_encabezados, chunksize
+        )
+        return
+    columnas, filas = leer_archivo(
+        ruta, tipo, delimitador, codificacion, tiene_encabezados
+    )
+    if not filas:
+        return
+    for inicio in range(0, len(filas), chunksize):
+        yield columnas, filas[inicio : inicio + chunksize]
+
+
+def _leer_delimitado_chunks(
+    ruta: Path,
+    delimitador: str,
+    encoding: str,
+    tiene_encabezados: bool,
+    chunksize: int,
+) -> Iterator[tuple[list[str], list[dict[str, Any]]]]:
+    header: int | None = 0 if tiene_encabezados else None
+    iterador = pd.read_csv(
+        ruta,
+        sep=delimitador,
+        encoding=encoding,
+        encoding_errors="replace",
+        header=header,
+        dtype=str,
+        keep_default_na=False,
+        na_values=[""],
+        engine="c",
+        chunksize=chunksize,
+        on_bad_lines="skip",
+    )
+    for chunk in iterador:
+        yield _dataframe_a_registros(chunk, tiene_encabezados)

@@ -34,6 +34,7 @@ class ArchivoProcesarRequest(CamelModel):
     codificacion: Codificacion = "UTF-8"
     tiene_encabezados: bool = True
     columna_clave: str | None = None
+    columna_join: str | None = None
     ruta: str = ""
     archivo_id_servidor: str | None = None
 
@@ -41,6 +42,7 @@ class ArchivoProcesarRequest(CamelModel):
 class MapeoProcesarRequest(CamelModel):
     archivo_id: str
     columna_clave: str | None = None
+    columna_join: str | None = None
     mapeos: list[ColumnaMapeo] = []
 
 
@@ -71,6 +73,10 @@ def procesar(request: ProcesarRequest) -> dict[str, object]:
             or archivo.columna_clave
             or ""
         )
+        columna_join = (
+            (mapeo.columna_join if mapeo else None)
+            or archivo.columna_join
+        )
         ruta = archivo.ruta
         if not ruta:
             id_lookup = archivo.archivo_id_servidor or archivo.id
@@ -96,6 +102,7 @@ def procesar(request: ProcesarRequest) -> dict[str, object]:
                 codificacion=archivo.codificacion,
                 tiene_encabezados=archivo.tiene_encabezados,
                 columna_clave=columna_clave,
+                columna_join=columna_join,
                 columnas=columnas_mapeo,
             )
         )

@@ -139,6 +139,20 @@ def update_status(
     return _hash_a_job(datos)
 
 
+def update_progreso(job_id: str, resultado: ResultadoProceso) -> None:
+    cliente = _cliente()
+    clave = _job_key(job_id)
+    if not cliente.exists(clave):
+        return
+    cliente.hset(
+        clave,
+        mapping={
+            "resultado": resultado.model_dump_json(),
+            "updated_at": _ahora(),
+        },
+    )
+
+
 def obtener_job(job_id: str) -> Job | None:
     cliente = _cliente()
     datos = cliente.hgetall(_job_key(job_id))

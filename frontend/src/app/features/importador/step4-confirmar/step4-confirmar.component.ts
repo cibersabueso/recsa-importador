@@ -76,6 +76,11 @@ import { Delimitador } from '../../../core/models/archivo.model';
                     <span class="badge-info">
                       Clave: <strong>{{ a.columnaClave ?? '—' }}</strong>
                     </span>
+                    @if (a.columnaJoin && a.columnaJoin !== a.columnaClave) {
+                      <span class="badge-info">
+                        Join: <strong>{{ a.columnaJoin }}</strong>
+                      </span>
+                    }
                     <span class="badge-info">
                       Encoding: <strong>{{ a.codificacion }}</strong>
                     </span>

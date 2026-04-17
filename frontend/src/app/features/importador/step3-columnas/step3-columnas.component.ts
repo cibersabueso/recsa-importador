@@ -175,6 +175,41 @@ import { CAMPOS_ESTANDAR, Mapeo, MapeoArchivo } from '../../../core/models/mapeo
           </div>
         </section>
 
+        @if (archivos().length > 1) {
+          <section class="app-card seccion">
+            <header class="seccion-header">
+              <div>
+                <h3>Columna para cruzar con otros archivos</h3>
+                <p class="subtitulo">
+                  Opcional. Columna de unión con los demás archivos. Si se deja vacía se
+                  usa la columna clave.
+                </p>
+              </div>
+            </header>
+
+            <div class="grid-clave">
+              <button
+                type="button"
+                class="boton-clave"
+                [ngClass]="{ seleccionada: mapeoActivo()?.columnaJoin === null }"
+                (click)="seleccionarColumnaJoin(null)"
+              >
+                — Usar columna clave —
+              </button>
+              @for (col of archivo.columnas; track col) {
+                <button
+                  type="button"
+                  class="boton-clave"
+                  [ngClass]="{ seleccionada: mapeoActivo()?.columnaJoin === col }"
+                  (click)="seleccionarColumnaJoin(col)"
+                >
+                  {{ col }}
+                </button>
+              }
+            </div>
+          </section>
+        }
+
         <section class="app-card seccion">
           <header class="seccion-header">
             <div>
@@ -355,6 +390,12 @@ export class Step3ColumnasComponent {
     const id = this.archivoActivoId();
     if (!id) return;
     this.importador.definirColumnaClave(id, columna);
+  }
+
+  seleccionarColumnaJoin(columna: string | null): void {
+    const id = this.archivoActivoId();
+    if (!id) return;
+    this.importador.definirColumnaJoin(id, columna);
   }
 
   destinoOcupadoPorOtro(destino: string, origen: string): boolean {

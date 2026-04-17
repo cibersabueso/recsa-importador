@@ -24,6 +24,8 @@ class ResultadoProceso(BaseModel):
     filas_validas: int = 0
     filas_con_error: int = 0
     duplicados: int = 0
+    filas_procesadas: int = 0
+    progreso_porcentaje: int = 0
     detalle_archivos: list[EstadisticasArchivo] = []
     errores: list[str] = []
     archivo_resultado: str | None = None

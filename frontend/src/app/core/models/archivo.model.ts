@@ -16,6 +16,7 @@ export interface ArchivoSubido {
   columnas: string[];
   previsualizacion: string[][];
   columnaClave: string | null;
+  columnaJoin: string | null;
   archivoIdServidor?: string;
   rutaServidor?: string;
 }

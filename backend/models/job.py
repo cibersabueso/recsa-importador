@@ -36,6 +36,7 @@ class ArchivoJob(BaseModel):
     codificacion: Codificacion
     tiene_encabezados: bool
     columna_clave: str
+    columna_join: str | None = None
     columnas: list[ColumnaMapeo]
 
 

@@ -188,7 +188,12 @@ export class ImportadorService {
     });
     this._mapeos.update((arr) => [
       ...arr,
-      { archivoId, mapeos, columnaClave: archivo.columnaClave },
+      {
+        archivoId,
+        mapeos,
+        columnaClave: archivo.columnaClave,
+        columnaJoin: archivo.columnaJoin,
+      },
     ]);
   }
 
@@ -220,6 +225,15 @@ export class ImportadorService {
     );
     this._archivos.update((arr) =>
       arr.map((a) => (a.id === archivoId ? { ...a, columnaClave: columna } : a)),
+    );
+  }
+
+  definirColumnaJoin(archivoId: string, columna: string | null): void {
+    this._mapeos.update((arr) =>
+      arr.map((m) => (m.archivoId === archivoId ? { ...m, columnaJoin: columna } : m)),
+    );
+    this._archivos.update((arr) =>
+      arr.map((a) => (a.id === archivoId ? { ...a, columnaJoin: columna } : a)),
     );
   }
 
@@ -291,6 +305,7 @@ export class ImportadorService {
       columnas: [],
       previsualizacion: [],
       columnaClave: null,
+      columnaJoin: null,
       _raw: file,
     };
   }

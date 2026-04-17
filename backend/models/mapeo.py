@@ -16,6 +16,7 @@ class MapeoConfig(CamelModel):
         validation_alias=AliasChoices("archivo_id", "archivoId"),
     )
     columna_clave: str | None = None
+    columna_join: str | None = None
     columnas: list[ColumnaMapeo] = Field(
         default_factory=list,
         validation_alias=AliasChoices("columnas", "mapeos"),

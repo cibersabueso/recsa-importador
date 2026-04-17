@@ -14,6 +14,7 @@ export interface MapeoArchivo {
   archivoId: string;
   mapeos: Mapeo[];
   columnaClave: string | null;
+  columnaJoin: string | null;
 }
 
 export const CAMPOS_ESTANDAR: readonly CampoEstandar[] = [
