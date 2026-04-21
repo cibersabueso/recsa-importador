@@ -1,0 +1,51 @@
+<div class="mb-8 flex items-center gap-2">
+  <div class="flex items-center">
+    <div
+      class="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-300"
+      [ngClass]="setBackgroundColor(0)"
+    >
+      <fa-icon [icon]="faArrowUpFromBracket" />
+      <span class="font-medium">Subir archivos</span>
+    </div>
+    <div class="w-12 h-0.5 mx-2 transition-colors duration-300 bg-[#E4DDD1]"></div>
+  </div>
+  <div class="flex items-center">
+    <div
+      class="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-300"
+      [ngClass]="setBackgroundColor(1)"
+    >
+      <fa-icon [icon]="faCog" />
+      <span class="font-medium">Configurar formato</span>
+    </div>
+    <div class="w-12 h-0.5 mx-2 transition-colors duration-300 bg-[#E4DDD1]"></div>
+  </div>
+  <div class="flex items-center">
+    <div
+      class="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-300"
+      [ngClass]="setBackgroundColor(2)"
+    >
+      <fa-icon [icon]="faCheckSquare" />
+      <div class="font-medium">Revisar columnas</div>
+    </div>
+    <div class="w-12 h-0.5 mx-2 transition-colors duration-300 bg-[#E4DDD1]"></div>
+  </div>
+  <div class="flex items-center">
+    <div
+      class="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-300"
+      [ngClass]="setBackgroundColor(3)"
+    >
+      <fa-icon [icon]="faDatabase" />
+      <div class="font-medium">Origen de datos</div>
+    </div>
+    <div class="w-12 h-0.5 mx-2 transition-colors duration-300 bg-[#E4DDD1]"></div>
+  </div>
+  <div class="flex items-center">
+    <div
+      class="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-300"
+      [ngClass]="setBackgroundColor(4)"
+    >
+      <fa-icon [icon]="faCheck" />
+      <div class="font-medium">Confirmar importación</div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,95 @@
+<div class="bg-white rounded-2xl p-8 shadow-lg shadow-[#1E3A5F]/5">
+  <h2 class="text-3xl mb-2 text-[#1E3A5F]">Subí tus archivos</h2>
+  <p class="text-[#1A1614]/60 mb-8">
+    Arrastrá uno o varios archivos, o hacé clic para seleccionarlos
+  </p>
+  <div
+    tabindex="0"
+    (click)="fileInput.click()"
+    (keydown.enter)="fileInput.click()"
+    (dragover)="onDragOver($event)"
+    (drop)="onDrop($event)"
+    class="relative border-2 border-dashed rounded-2xl p-16 mb-6 cursor-pointer transition-all duration-300 border-[#E4DDD1] bg-[#FAF8F5] hover:border-[#1E3A5F] hover:bg-white"
+  >
+    <input
+      #fileInput
+      type="file"
+      multiple
+      accept=".csv,.txt,.xlsx,.xls,.xml,.json"
+      class="hidden"
+      (change)="onFileSelected($event)"
+    />
+    <div class="flex flex-col items-center">
+      <div
+        class="w-20 h-20 rounded-full bg-gradient-to-br from-[#1E3A5F] to-[#2D9596] flex items-center justify-center mb-6 shadow-lg"
+      >
+        <fa-icon [icon]="faArrowUpFromBracket" class="text-white" />
+      </div>
+      <p class="text-xl mb-2">Arrastrá archivos aquí</p>
+      <p class="text-[#1A1614]/50">o hacé clic para seleccionar desde tu computadora</p>
+    </div>
+    <div class="flex gap-2 justify-center mt-6 flex-wrap">
+      <span
+        class="px-3 py-1.5 rounded-full bg-white text-sm border border-[#E4DDD1] text-[#1A1614]/70"
+        >CSV</span
+      >
+      <span
+        class="px-3 py-1.5 rounded-full bg-white text-sm border border-[#E4DDD1] text-[#1A1614]/70"
+        >TXT</span
+      >
+      <span
+        class="px-3 py-1.5 rounded-full bg-white text-sm border border-[#E4DDD1] text-[#1A1614]/70"
+        >XLSX</span
+      >
+      <span
+        class="px-3 py-1.5 rounded-full bg-white text-sm border border-[#E4DDD1] text-[#1A1614]/70"
+        >XML</span
+      >
+      <span
+        class="px-3 py-1.5 rounded-full bg-white text-sm border border-[#E4DDD1] text-[#1A1614]/70"
+        >JSON</span
+      >
+    </div>
+  </div>
+  <div class="space-y-3 mb-8">
+    <h3 class="text-lg mb-4 text-[#1E3A5F]">Archivos cargados ({{ files().length }})</h3>
+    @for (file of files(); track $index) {
+      <div
+        class="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-white to-[#FAF8F5] border border-[#E4DDD1] hover:border-[#2D9596] transition-colors group"
+      >
+        <div class="flex items-center gap-4 flex-1">
+          <div
+            class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#1E3A5F] to-[#2D9596] flex items-center justify-center"
+          >
+            <fa-icon [icon]="faFileLines" class="text-white" />
+          </div>
+          <div class="flex-1">
+            <p class="font-medium text-[#1A1614]">{{ file.file.name }}</p>
+            <div class="flex items-center gap-3 mt-1">
+              <span class="text-sm text-[#1A1614]/50">{{ formatFileSize(file.size) }}</span>
+              <span class="w-1 h-1 rounded-full bg-[#E4DDD1]"></span>
+              <span class="text-sm px-2 py-0.5 rounded bg-[#2D9596]/10 text-[#2D9596]"
+                >{{ getFileExtension(file.file) }} detectado</span
+              >
+            </div>
+          </div>
+        </div>
+        <button
+          class="p-2 rounded-lg hover:bg-[#D16666]/10 text-[#D16666] transition-colors opacity-0 group-hover:opacity-100"
+          (click)="deleteFile(file.id ? file.id : '')"
+        >
+          <fa-icon [icon]="faXmark" />
+        </button>
+      </div>
+    }
+  </div>
+  <div class="flex justify-end">
+    <button
+      routerLink="/cargas/importar/formato"
+      class="px-8 py-3 rounded-xl bg-gradient-to-r from-[#1E3A5F] to-[#2D9596] text-white font-medium shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center gap-2"
+    >
+      Continuar
+      <fa-icon [icon]="faCheck" />
+    </button>
+  </div>
+</div>

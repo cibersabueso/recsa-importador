@@ -1,0 +1,26 @@
+<div class="min-h-screen bg-[#FAF8F5] p-8">
+  <div class="max-w-[1600px] mx-auto">
+    <div class="mb-12">
+      <h1 class="text-5xl mb-2 tracking-tight text-[#1E3A5F]">Importador de Datos</h1>
+      <p class="text-lg text-[#1A1614]/60">Cargá y procesá tus archivos en pocos pasos</p>
+    </div>
+    <app-importar-datos-header />
+    <div class="flex gap-8">
+      <div class="flex-1" style="opacity: 1; transform: none">
+        <router-outlet />
+      </div>
+      <div style="opacity: 1; transform: none">
+        <div class="w-80 sticky top-8" style="opacity: 1">
+          <app-import-datas-summary />
+          <div class="mt-4 p-4 rounded-xl bg-white shadow-sm border border-[#E4DDD1]">
+            <h4 class="text-sm mb-2 text-[#1E3A5F]">💡 Consejo</h4>
+            <p class="text-xs text-[#1A1614]/60 leading-relaxed">
+              Podés arrastrar varios archivos a la vez. El sistema detectará automáticamente el
+              formato de cada uno.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,60 +1,26 @@
-import { Routes } from '@angular/router';
+import type { Routes } from '@angular/router';
+import { Dashboard } from './features/dashboard/presentation/pages/dashboard';
+import { ImportarDatosIndex } from './features/importar-datos/presentation/pages/index/index';
+import { ImportarDatos } from './features/importar-datos/presentation/pages/importar.datos/importar.datos';
+import { ConfigurarFormato } from './features/importar-datos/presentation/pages/configurar.formato/configurar.formato';
 
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'importador',
-    pathMatch: 'full',
+    component: Dashboard,
   },
   {
-    path: 'importador',
-    loadComponent: () =>
-      import('./features/importador/importador.component').then((m) => m.ImportadorComponent),
+    path: 'cargas/importar',
+    component: ImportarDatosIndex,
     children: [
       {
         path: '',
-        redirectTo: 'subir',
-        pathMatch: 'full',
-      },
-      {
-        path: 'subir',
-        loadComponent: () =>
-          import('./features/importador/step1-subir/step1-subir.component').then(
-            (m) => m.Step1SubirComponent,
-          ),
+        component: ImportarDatos,
       },
       {
         path: 'formato',
-        loadComponent: () =>
-          import('./features/importador/step2-formato/step2-formato.component').then(
-            (m) => m.Step2FormatoComponent,
-          ),
-      },
-      {
-        path: 'columnas',
-        loadComponent: () =>
-          import('./features/importador/step3-columnas/step3-columnas.component').then(
-            (m) => m.Step3ColumnasComponent,
-          ),
-      },
-      {
-        path: 'origen',
-        loadComponent: () =>
-          import('./features/importador/step4-origen/step4-origen.component').then(
-            (m) => m.Step4OrigenComponent,
-          ),
-      },
-      {
-        path: 'confirmar',
-        loadComponent: () =>
-          import('./features/importador/step4-confirmar/step4-confirmar.component').then(
-            (m) => m.Step4ConfirmarComponent,
-          ),
+        component: ConfigurarFormato,
       },
     ],
-  },
-  {
-    path: '**',
-    redirectTo: 'importador',
   },
 ];

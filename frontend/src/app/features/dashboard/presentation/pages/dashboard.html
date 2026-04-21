@@ -1,0 +1,51 @@
+<div class="p-8">
+  <div>
+    <h1 class="text-4xl mb-2 text-[#1E3A5F]">Bienvenido al sistema de gestión</h1>
+    <p class="text-[#1A1614]/60 mb-12">
+      Administrá tus empresas, importá datos y gestioná tus procesos
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <a routerLink="/cargas/importar">
+        <div
+          class="p-6 rounded-2xl bg-white border border-[#E4DDD1] shadow-lg shadow-[#1E3A5F]/5 hover:shadow-xl transition-shadow cursor-pointer"
+        >
+          <div
+            class="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#2D9596] flex items-center justify-center mb-4 text-white"
+          >
+            <fa-icon [icon]="faArrowUpFromBracket" />
+          </div>
+          <h3 class="text-xl mb-2 text-[#1E3A5F] text-semibold">Importar datos</h3>
+          <p class="text-sm text-[#1A1614]/60">
+            Cargá archivos de datos para procesamiento automático
+          </p>
+        </div>
+      </a>
+      <a routerLink="/empresas">
+        <div
+          class="p-6 rounded-2xl bg-white border border-[#E4DDD1] shadow-lg shadow-[#1E3A5F]/5 hover:shadow-xl transition-shadow cursor-pointer"
+        >
+          <div
+            class="w-12 h-12 rounded-xl bg-gradient-to-br from-[#2D9596] to-[#E8A838] flex items-center justify-center mb-4 text-white"
+          >
+            <fa-icon [icon]="faCity" />
+          </div>
+          <h3 class="text-xl mb-2 text-[#1E3A5F] text-semibold">Gestión de empresas</h3>
+          <p class="text-sm text-[#1A1614]/60">Administrá las empresas y sus configuraciones</p>
+        </div>
+      </a>
+      <a routerLink="/cargas/importar">
+        <div
+          class="p-6 rounded-2xl bg-white border border-[#E4DDD1] shadow-lg shadow-[#1E3A5F]/5 hover:shadow-xl transition-shadow cursor-pointer"
+        >
+          <div
+            class="w-12 h-12 rounded-xl bg-gradient-to-br from-[#E8A838] to-[#D16666] flex items-center justify-center mb-4 text-white"
+          >
+            <fa-icon [icon]="faArrowTrendUp" />
+          </div>
+          <h3 class="text-xl mb-2 text-[#1E3A5F] text-semibold">Reportes</h3>
+          <p class="text-sm text-[#1A1614]/60">Visualizá estadísticas y métricas del sistema</p>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
