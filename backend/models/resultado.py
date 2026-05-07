@@ -13,6 +13,7 @@ class EstadisticasArchivo(BaseModel):
     filas_validas: int
     filas_con_error: int
     duplicados: int
+    sin_match: int = 0
     separador: str
     columna_clave: str
 
@@ -24,6 +25,7 @@ class ResultadoProceso(BaseModel):
     filas_validas: int = 0
     filas_con_error: int = 0
     duplicados: int = 0
+    sin_match: int = 0
     filas_procesadas: int = 0
     progreso_porcentaje: int = 0
     detalle_archivos: list[EstadisticasArchivo] = []

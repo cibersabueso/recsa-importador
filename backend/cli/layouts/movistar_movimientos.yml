@@ -1,0 +1,9 @@
+nombre: movistar_movimientos
+descripcion: "Movistar Chile - movimientos de pagos (MOVIMIENTOS_SCRECSA)"
+delimitador: ";"
+codificacion: UTF-8
+tiene_encabezados: true
+separador_decimal: "."
+columnas:
+  - nombre: NUM_IDENT
+    tipo: string

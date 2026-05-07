@@ -1,0 +1,19 @@
+nombre: movistar_contacto
+descripcion: "Movistar Chile - contactos del cliente (CONTACTO_SCRECSA)"
+delimitador: ";"
+codificacion: UTF-8
+tiene_encabezados: true
+separador_decimal: "."
+columnas:
+  - nombre: NUM_IDENT
+    tipo: string
+  - nombre: NOM_CLIENTE
+    tipo: string
+  - nombre: OBS_DIRECCION
+    tipo: string
+  - nombre: TEL_CONTACTO
+    tipo: string
+  - nombre: TEL_CONTACTO2
+    tipo: string
+  - nombre: EMAIL
+    tipo: string

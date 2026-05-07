@@ -17,10 +17,11 @@ router = APIRouter(prefix="/api", tags=["proceso"])
 EstadoFrontend = Literal["pendiente", "en_proceso", "completado", "error"]
 
 _ESTADO_DB_A_FRONTEND: dict[str, EstadoFrontend] = {
-    "pending": "pendiente",
-    "processing": "en_proceso",
-    "completed": "completado",
+    "encolado": "pendiente",
+    "procesando": "en_proceso",
+    "completado": "completado",
     "error": "error",
+    "fallido": "error",
 }
 
 
@@ -52,7 +53,16 @@ class ProcesarRequest(CamelModel):
     mapeos: list[MapeoProcesarRequest] = []
 
 
-@router.post("/procesar")
+@router.post(
+    "/procesar",
+    deprecated=True,
+    summary="[DEPRECATED] Encola un job vía contrato legacy del frontend",
+    description=(
+        "Endpoint heredado usado por el frontend Angular antes de la migración a "
+        "POST /api/jobs. Sigue funcional; preferir POST /api/jobs para integraciones "
+        "nuevas."
+    ),
+)
 def procesar(request: ProcesarRequest) -> dict[str, object]:
     if not request.archivos:
         raise HTTPException(

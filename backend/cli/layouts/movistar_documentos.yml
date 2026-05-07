@@ -1,0 +1,53 @@
+nombre: movistar_documentos
+descripcion: "Movistar Chile - archivo principal de deudas (DOCUMENTOS_SCRECSA)"
+delimitador: ";"
+codificacion: UTF-8
+tiene_encabezados: true
+separador_decimal: "."
+columnas:
+  - nombre: ENTIDAD
+  - nombre: ORIGEN
+  - nombre: TRAMO
+  - nombre: FEC_ENVIO
+    tipo: date
+    formato: DD-MM-YYYY
+  - nombre: FEC_CIERRE
+    tipo: date
+    formato: DD-MM-YYYY
+  - nombre: NUM_IDENT
+    tipo: string
+  - nombre: COD_CLIENTE
+  - nombre: TIPO_CLIENTE
+  - nombre: TIPO_MOROSO
+  - nombre: CATEGORIA
+  - nombre: RIESGO
+  - nombre: CICLO
+  - nombre: CARTERA
+  - nombre: ESTADO
+  - nombre: COD_TIPDOC
+  - nombre: DES_TIPDOC
+  - nombre: NUM_FOLIO
+    tipo: string
+  - nombre: FEC_EMI
+    tipo: date
+    formato: DD-MM-YYYY
+  - nombre: FEC_VENC
+    tipo: date
+    formato: DD-MM-YYYY
+  - nombre: NUM_CUOTA
+  - nombre: SEC_CUOTA
+  - nombre: IMPORTE
+    tipo: decimal
+  - nombre: SALDO
+    tipo: decimal
+  - nombre: IMPORTE_DISPUTA
+  - nombre: IMPORTE_EQ
+  - nombre: SALDO_EQ
+  - nombre: IMPORTE_LD
+  - nombre: IMPORTE_DECO
+  - nombre: TRAMO_PROV
+  - nombre: PROVISION
+  - nombre: URL
+  - nombre: FECHA_PROC
+  - nombre: IND_RENDIMIENTO
+  - nombre: IMPORTE_OTROS

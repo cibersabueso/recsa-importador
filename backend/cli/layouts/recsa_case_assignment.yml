@@ -1,0 +1,47 @@
+nombre: recsa_case_assignment
+descripcion: "RECSA Peru - asignacion de casos cartera (sin encabezados)"
+delimitador: "|"
+codificacion: UTF-8
+tiene_encabezados: false
+separador_decimal: "."
+columnas:
+  - posicion: 0
+    nombre: fecha_proceso
+    tipo: date
+    formato: DD/MM/YYYY
+  - posicion: 2
+    nombre: division
+    tipo: string
+  - posicion: 4
+    nombre: numero_operacion
+    tipo: string
+    requerido: true
+  - posicion: 7
+    nombre: codigo_cliente_interno
+    tipo: string
+    solo_join: true
+  - posicion: 8
+    nombre: nombre_cliente
+    tipo: string
+  - posicion: 10
+    nombre: monto_actual
+    tipo: decimal
+  - posicion: 11
+    nombre: fecha_vencimiento
+    tipo: date
+    formato: DD/MM/YYYY
+  - posicion: 12
+    nombre: dias_mora
+    tipo: int
+  - posicion: 13
+    nombre: tramo
+    tipo: categorical
+  - posicion: 15
+    nombre: dni_cliente
+    tipo: string
+  - posicion: 28
+    nombre: monto_total
+    tipo: decimal
+  - posicion: 87
+    nombre: producto
+    tipo: categorical

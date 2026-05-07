@@ -65,13 +65,16 @@ def leer_archivo(
     delimitador: str,
     codificacion: str,
     tiene_encabezados: bool,
+    nombres_columnas: list[str] | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     encoding = _mapear_codificacion(codificacion)
     match tipo:
         case "csv" | "txt":
-            return _leer_delimitado(ruta, delimitador, encoding, tiene_encabezados)
+            return _leer_delimitado(
+                ruta, delimitador, encoding, tiene_encabezados, nombres_columnas
+            )
         case "xlsx":
-            return _leer_xlsx(ruta, tiene_encabezados)
+            return _leer_xlsx(ruta, tiene_encabezados, nombres_columnas)
         case "json":
             return _leer_json(ruta, encoding)
         case "xml":
@@ -85,6 +88,7 @@ def _leer_delimitado(
     delimitador: str,
     encoding: str,
     tiene_encabezados: bool,
+    nombres_columnas: list[str] | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     header: int | None = 0 if tiene_encabezados else None
     dataframe = pd.read_csv(
@@ -97,15 +101,17 @@ def _leer_delimitado(
         na_values=[""],
         engine="python",
     )
-    return _dataframe_a_registros(dataframe, tiene_encabezados)
+    return _dataframe_a_registros(dataframe, tiene_encabezados, nombres_columnas)
 
 
 def _leer_xlsx(
-    ruta: Path, tiene_encabezados: bool
+    ruta: Path,
+    tiene_encabezados: bool,
+    nombres_columnas: list[str] | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     header: int | None = 0 if tiene_encabezados else None
     dataframe = pd.read_excel(ruta, header=header, dtype=str, engine="openpyxl")
-    return _dataframe_a_registros(dataframe, tiene_encabezados)
+    return _dataframe_a_registros(dataframe, tiene_encabezados, nombres_columnas)
 
 
 def _leer_json(ruta: Path, encoding: str) -> tuple[list[str], list[dict[str, Any]]]:
@@ -156,11 +162,26 @@ def _leer_xml(ruta: Path, encoding: str) -> tuple[list[str], list[dict[str, Any]
     return columnas, filas_normalizadas
 
 
+def _aplicar_nombres_sin_encabezados(
+    dataframe: pd.DataFrame, nombres_columnas: list[str] | None
+) -> None:
+    ncols = len(dataframe.columns)
+    if nombres_columnas:
+        nombres = list(nombres_columnas[:ncols])
+        if len(nombres) < ncols:
+            nombres += [f"col_{i}" for i in range(len(nombres), ncols)]
+        dataframe.columns = nombres
+        return
+    dataframe.columns = [f"col_{i}" for i in range(ncols)]
+
+
 def _dataframe_a_registros(
-    dataframe: pd.DataFrame, tiene_encabezados: bool
+    dataframe: pd.DataFrame,
+    tiene_encabezados: bool,
+    nombres_columnas: list[str] | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     if not tiene_encabezados:
-        dataframe.columns = [f"columna_{i + 1}" for i in range(len(dataframe.columns))]
+        _aplicar_nombres_sin_encabezados(dataframe, nombres_columnas)
     columnas = [str(col) for col in dataframe.columns]
     dataframe = dataframe.where(dataframe.notna(), None)
     filas = [
@@ -198,15 +219,16 @@ def leer_archivo_chunks(
     codificacion: str,
     tiene_encabezados: bool,
     chunksize: int = CHUNK_SIZE_DEFAULT,
+    nombres_columnas: list[str] | None = None,
 ) -> Iterator[tuple[list[str], list[dict[str, Any]]]]:
     encoding = _mapear_codificacion(codificacion)
     if tipo in TIPOS_DELIMITADOS:
         yield from _leer_delimitado_chunks(
-            ruta, delimitador, encoding, tiene_encabezados, chunksize
+            ruta, delimitador, encoding, tiene_encabezados, chunksize, nombres_columnas
         )
         return
     columnas, filas = leer_archivo(
-        ruta, tipo, delimitador, codificacion, tiene_encabezados
+        ruta, tipo, delimitador, codificacion, tiene_encabezados, nombres_columnas
     )
     if not filas:
         return
@@ -220,6 +242,7 @@ def _leer_delimitado_chunks(
     encoding: str,
     tiene_encabezados: bool,
     chunksize: int,
+    nombres_columnas: list[str] | None = None,
 ) -> Iterator[tuple[list[str], list[dict[str, Any]]]]:
     header: int | None = 0 if tiene_encabezados else None
     iterador = pd.read_csv(
@@ -236,4 +259,4 @@ def _leer_delimitado_chunks(
         on_bad_lines="skip",
     )
     for chunk in iterador:
-        yield _dataframe_a_registros(chunk, tiene_encabezados)
+        yield _dataframe_a_registros(chunk, tiene_encabezados, nombres_columnas)

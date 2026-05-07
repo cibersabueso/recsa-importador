@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-import csv
 import logging
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal
 
+from psycopg import Connection
+
+from db.db_config import resolver_db
+from db.postgres_client import ensure_schema, get_connection
 from models.job import ArchivoJob, Job, JobPayload
 from models.mapeo import ColumnaMapeo
 from models.resultado import EstadisticasArchivo, ResultadoProceso
 from services import queue_service
 from services.file_service import UPLOAD_DIR
+from services.progress_tracker import NO_OP_PROGRESS, ProgressTracker
+from services.sinks import CsvSink, FilaSink, PostgresSink
 from utils.file_parser import (
     CHUNK_SIZE_DEFAULT,
     contar_lineas,
@@ -28,10 +33,14 @@ POLL_INTERVAL_SECONDS = 2.0
 PROGRESO_INTERVALO_FILAS = 50_000
 MAX_ERRORES_REGISTRADOS = 100
 
+SinkTipo = Literal["csv", "postgres"]
+
 logger = logging.getLogger("recsa.worker")
 
 _worker_thread: threading.Thread | None = None
 _stop_event = threading.Event()
+
+_NOMBRES_REGISTRY: dict[str, list[str]] = {}
 
 
 def iniciar_worker() -> None:
@@ -67,7 +76,7 @@ def _procesar_job(job: Job) -> None:
         _ejecutar(job.payload, resultado)
         resultado.estado = "completado"
         resultado.progreso_porcentaje = 100
-        queue_service.update_status(job.id, "completed", resultado)
+        queue_service.update_status(job.id, "completado", resultado)
     except Exception as error:  # noqa: BLE001
         logger.exception("Error procesando job %s: %s", job.id, error)
         resultado.estado = "error"
@@ -76,17 +85,30 @@ def _procesar_job(job: Job) -> None:
 
 
 class _ContadorProgreso:
-    def __init__(self, job_id: str, total_estimado: int, resultado: ResultadoProceso) -> None:
+    def __init__(
+        self,
+        job_id: str,
+        total_estimado: int,
+        resultado: ResultadoProceso,
+        logger: logging.Logger | None = None,
+        progress: ProgressTracker | None = None,
+    ) -> None:
         self.job_id = job_id
         self.total_estimado = max(total_estimado, 1)
         self.resultado = resultado
         self.filas_procesadas = 0
         self._ultimo_reporte = 0
+        self._log: logging.Logger = (
+            logger if logger is not None else logging.getLogger("recsa.worker")
+        )
+        self._progress = progress
 
     def sumar(self, cantidad: int) -> None:
         if cantidad <= 0:
             return
         self.filas_procesadas += cantidad
+        if self._progress is not None:
+            self._progress.avanzar(cantidad)
         if self.filas_procesadas - self._ultimo_reporte >= PROGRESO_INTERVALO_FILAS:
             self._reportar()
 
@@ -98,31 +120,66 @@ class _ContadorProgreso:
         try:
             queue_service.update_progreso(self.job_id, self.resultado)
         except Exception as error:  # noqa: BLE001
-            logger.warning("No se pudo reportar progreso: %s", error)
+            self._log.warning("No se pudo reportar progreso: %s", error)
 
     def flush(self) -> None:
         if self.filas_procesadas > self._ultimo_reporte:
             self._reportar()
 
 
-def _estimar_total_filas(archivos: list[ArchivoJob]) -> int:
-    total = 0
-    for archivo in archivos:
-        ruta = Path(archivo.ruta)
-        if not ruta.exists():
-            continue
-        if es_tipo_delimitado(archivo.tipo):
-            try:
-                lineas = contar_lineas(ruta)
-                if archivo.tiene_encabezados and lineas > 0:
-                    lineas -= 1
-                total += lineas
-            except OSError as error:
-                logger.warning("No se pudo contar líneas de %s: %s", archivo.nombre, error)
-    return total
+def _estimar_lineas_archivo(
+    archivo: ArchivoJob, logger: logging.Logger | None = None
+) -> int:
+    log = logger if logger is not None else logging.getLogger("recsa.worker")
+    ruta = Path(archivo.ruta)
+    if not ruta.exists():
+        return 0
+    if not es_tipo_delimitado(archivo.tipo):
+        return 0
+    try:
+        lineas = contar_lineas(ruta)
+    except OSError as error:
+        log.warning("No se pudo contar líneas de %s: %s", archivo.nombre, error)
+        return 0
+    if archivo.tiene_encabezados and lineas > 0:
+        lineas -= 1
+    return lineas
 
 
-def _ejecutar(payload: JobPayload, resultado: ResultadoProceso) -> None:
+def _estimar_total_filas(
+    archivos: list[ArchivoJob], logger: logging.Logger | None = None
+) -> int:
+    return sum(_estimar_lineas_archivo(a, logger) for a in archivos)
+
+
+def _crear_sink(
+    tipo: SinkTipo, job_id: str, payload: JobPayload
+) -> tuple[FilaSink, str, Connection | None]:
+    if tipo == "csv":
+        archivo_salida = RESULTADOS_DIR / f"{job_id}.csv"
+        return CsvSink(archivo_salida), str(archivo_salida), None
+    pais = payload.proceso.pais
+    db_config = resolver_db(pais)
+    ensure_schema(db_config)
+    conn = get_connection(db_config)
+    sink = PostgresSink(conn, job_id)
+    pais_label = pais.strip().upper() if pais else "default"
+    identificador = (
+        f"postgres://{db_config.database}.cargas?job_id={job_id}&pais={pais_label}"
+    )
+    return sink, identificador, conn
+
+
+def _ejecutar(
+    payload: JobPayload,
+    resultado: ResultadoProceso,
+    sink: SinkTipo = "csv",
+    logger: logging.Logger | None = None,
+    nombres_por_archivo: dict[str, list[str]] | None = None,
+    progress: ProgressTracker | None = None,
+) -> None:
+    log = logger if logger is not None else logging.getLogger("recsa.worker")
+    progreso = progress if progress is not None else NO_OP_PROGRESS
     archivos = payload.archivos
     if not archivos:
         raise ValueError("El job no incluye archivos")
@@ -132,31 +189,67 @@ def _ejecutar(payload: JobPayload, resultado: ResultadoProceso) -> None:
         raise ValueError("Falta archivo principal (orden 1)")
 
     secundarios = [a for a in archivos if a.archivo_id != principal.archivo_id]
-    total_estimado = _estimar_total_filas(archivos)
-    contador = _ContadorProgreso(resultado.job_id, total_estimado, resultado)
 
-    archivo_salida = RESULTADOS_DIR / f"{resultado.job_id}.csv"
+    if nombres_por_archivo:
+        for archivo_id, nombres in nombres_por_archivo.items():
+            if nombres:
+                _NOMBRES_REGISTRY[archivo_id] = list(nombres)
+
+    progreso.iniciar_fase("Estimando filas totales", None)
+    log.info("Estimando filas totales...")
+    total_estimado = _estimar_total_filas(archivos, log)
+    log.info("Total estimado: %d", total_estimado)
+    contador = _ContadorProgreso(
+        resultado.job_id, total_estimado, resultado, log, progress=progress
+    )
+
     estadisticas: list[EstadisticasArchivo] = []
+    fila_sink, identificador, conn = _crear_sink(sink, resultado.job_id, payload)
 
-    if not secundarios:
-        stats_principal = _procesar_principal_streaming(
-            principal, archivo_salida, contador, resultado
+    try:
+        total_principal = _estimar_lineas_archivo(principal, log)
+        progreso.iniciar_fase(
+            f"Procesando archivo principal: {principal.nombre}", total_principal
         )
-        estadisticas.append(stats_principal)
-        filas_salida = stats_principal.filas_validas
-    else:
-        indice, mapa_join, stats_principal = _indexar_principal(
-            principal, contador, resultado
-        )
-        estadisticas.append(stats_principal)
-        for secundario in secundarios:
-            stats_sec = _enriquecer_desde_secundario(
-                secundario, indice, mapa_join, contador, resultado
+        log.info("Procesando archivo principal: %s", principal.nombre)
+        if not secundarios:
+            stats_principal = _procesar_principal_streaming(
+                principal, fila_sink, contador, resultado
             )
-            estadisticas.append(stats_sec)
-        filas_salida = _escribir_indice(archivo_salida, indice)
-        indice.clear()
-        mapa_join.clear()
+            estadisticas.append(stats_principal)
+            filas_salida = stats_principal.filas_validas
+        else:
+            indice, mapa_join, stats_principal = _indexar_principal(
+                principal, contador, resultado
+            )
+            estadisticas.append(stats_principal)
+            log.info("Indice principal con %d claves", len(indice))
+            for secundario in secundarios:
+                total_sec = _estimar_lineas_archivo(secundario, log)
+                progreso.iniciar_fase(
+                    f"Enriqueciendo desde: {secundario.nombre}", total_sec
+                )
+                log.info("Enriqueciendo desde: %s", secundario.nombre)
+                stats_sec = _enriquecer_desde_secundario(
+                    secundario, indice, mapa_join, contador, resultado
+                )
+                estadisticas.append(stats_sec)
+            destino_label = (
+                "Escribiendo a Postgres" if sink == "postgres" else "Escribiendo a CSV"
+            )
+            progreso.iniciar_fase(destino_label, len(indice))
+            log.info("Escribiendo a sink...")
+            filas_salida = _escribir_indice(fila_sink, indice, progreso)
+            indice.clear()
+            mapa_join.clear()
+    finally:
+        fila_sink.close()
+        if conn is not None:
+            conn.close()
+        for archivo in archivos:
+            _NOMBRES_REGISTRY.pop(archivo.archivo_id, None)
+        progreso.terminar_fase()
+        log.info("Sink cerrado")
 
     contador.flush()
 
@@ -165,21 +258,9 @@ def _ejecutar(payload: JobPayload, resultado: ResultadoProceso) -> None:
     resultado.filas_validas = filas_salida
     resultado.filas_con_error = sum(e.filas_con_error for e in estadisticas)
     resultado.duplicados = sum(e.duplicados for e in estadisticas)
-    resultado.archivo_resultado = str(archivo_salida)
+    resultado.sin_match = sum(e.sin_match for e in estadisticas)
+    resultado.archivo_resultado = identificador
     resultado.filas_procesadas = contador.filas_procesadas
-
-
-def _abrir_writer(
-    archivo_salida: Path,
-) -> tuple[TextIO, csv.DictWriter]:
-    handle = archivo_salida.open("w", encoding="utf-8", newline="")
-    writer = csv.DictWriter(handle, fieldnames=CAMPOS_ESTANDAR, delimiter=";")
-    writer.writeheader()
-    return handle, writer
-
-
-def _fila_csv(fila: dict[str, str | None]) -> dict[str, str]:
-    return {campo: (fila.get(campo) or "") for campo in CAMPOS_ESTANDAR}
 
 
 def _iter_chunks_archivo(
@@ -189,6 +270,8 @@ def _iter_chunks_archivo(
     if not ruta.exists():
         raise ValueError(f"Archivo no encontrado en disco: {archivo.nombre}")
 
+    nombres = _NOMBRES_REGISTRY.get(archivo.archivo_id)
+
     if es_tipo_delimitado(archivo.tipo):
         iterador = leer_archivo_chunks(
             ruta=ruta,
@@ -197,6 +280,7 @@ def _iter_chunks_archivo(
             codificacion=archivo.codificacion,
             tiene_encabezados=archivo.tiene_encabezados,
             chunksize=CHUNK_SIZE_DEFAULT,
+            nombres_columnas=nombres,
         )
         for _, filas in iterador:
             yield filas
@@ -208,6 +292,7 @@ def _iter_chunks_archivo(
         delimitador=archivo.delimitador,
         codificacion=archivo.codificacion,
         tiene_encabezados=archivo.tiene_encabezados,
+        nombres_columnas=nombres,
     )
     for inicio in range(0, len(filas), CHUNK_SIZE_DEFAULT):
         yield filas[inicio : inicio + CHUNK_SIZE_DEFAULT]
@@ -239,7 +324,7 @@ def _obligatorios(archivo: ArchivoJob) -> list[str]:
 
 def _procesar_principal_streaming(
     archivo: ArchivoJob,
-    archivo_salida: Path,
+    sink: FilaSink,
     contador: _ContadorProgreso,
     resultado: ResultadoProceso,
 ) -> EstadisticasArchivo:
@@ -252,41 +337,37 @@ def _procesar_principal_streaming(
     filas_con_error = 0
     duplicados = 0
 
-    handle, writer = _abrir_writer(archivo_salida)
-    try:
-        for filas in _iter_chunks_validado(archivo, [col_identidad], resultado):
-            total_filas += len(filas)
-            for fila_origen in filas:
-                fila_destino = _aplicar_mapeo(
-                    fila_origen, archivo.columnas, archivo.separador_decimal
+    for filas in _iter_chunks_validado(archivo, [col_identidad], resultado):
+        total_filas += len(filas)
+        for fila_origen in filas:
+            fila_destino = _aplicar_mapeo(
+                fila_origen, archivo.columnas, archivo.separador_decimal
+            )
+            es_valida, _errores = validar_fila(fila_destino, obligatorios)
+            if not es_valida:
+                filas_con_error += 1
+                _registrar_error(
+                    resultado,
+                    archivo.nombre,
+                    "campos obligatorios vacíos",
+                    fila_origen,
                 )
-                es_valida, _errores = validar_fila(fila_destino, obligatorios)
-                if not es_valida:
-                    filas_con_error += 1
-                    _registrar_error(
-                        resultado,
-                        archivo.nombre,
-                        "campos obligatorios vacíos",
-                        fila_origen,
-                    )
-                    continue
-                clave = fila_origen.get(col_identidad)
-                if clave is None or str(clave).strip() == "":
-                    filas_con_error += 1
-                    _registrar_error(
-                        resultado, archivo.nombre, "columna identidad vacía", fila_origen
-                    )
-                    continue
-                clave_str = str(clave).strip()
-                if clave_str in claves_vistas:
-                    duplicados += 1
-                    continue
-                claves_vistas.add(clave_str)
-                writer.writerow(_fila_csv(fila_destino))
-                filas_validas += 1
-            contador.sumar(len(filas))
-    finally:
-        handle.close()
+                continue
+            clave = fila_origen.get(col_identidad)
+            if clave is None or str(clave).strip() == "":
+                filas_con_error += 1
+                _registrar_error(
+                    resultado, archivo.nombre, "columna identidad vacía", fila_origen
+                )
+                continue
+            clave_str = str(clave).strip()
+            if clave_str in claves_vistas:
+                duplicados += 1
+                continue
+            claves_vistas.add(clave_str)
+            sink.write(fila_destino)
+            filas_validas += 1
+        contador.sumar(len(filas))
 
     return EstadisticasArchivo(
         archivo_id=archivo.archivo_id,
@@ -421,7 +502,8 @@ def _enriquecer_desde_secundario(
         total_filas=total_filas,
         filas_validas=filas_validas,
         filas_con_error=filas_con_error,
-        duplicados=sin_match,  # Reutiliza el campo para reportar filas sin match en el principal
+        duplicados=0,
+        sin_match=sin_match,
         separador=archivo.delimitador,
         columna_clave=archivo.columna_clave,
     )
@@ -481,18 +563,18 @@ def _registrar_error(
 
 
 def _escribir_indice(
-    archivo_salida: Path, indice: dict[str, dict[str, str | None]]
+    sink: FilaSink,
+    indice: dict[str, dict[str, str | None]],
+    progress: ProgressTracker | None = None,
 ) -> int:
-    handle, writer = _abrir_writer(archivo_salida)
     total = 0
-    try:
-        for fila in indice.values():
-            fusionada: dict[str, str | None] = {campo: None for campo in CAMPOS_ESTANDAR}
-            fusionada.update(fila)
-            writer.writerow(_fila_csv(fusionada))
-            total += 1
-    finally:
-        handle.close()
+    for fila in indice.values():
+        fusionada: dict[str, str | None] = {campo: None for campo in CAMPOS_ESTANDAR}
+        fusionada.update(fila)
+        sink.write(fusionada)
+        total += 1
+        if progress is not None:
+            progress.avanzar(1)
     return total
 
 

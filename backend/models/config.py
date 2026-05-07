@@ -17,6 +17,7 @@ class ProcesoConfig(CamelModel):
     tipo_proceso: str
     nombre_interfaz: str
     responsable: str
+    pais: str | None = None
 
 
 class ArchivoConfig(CamelModel):

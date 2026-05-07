@@ -1,0 +1,11 @@
+nombre: movistar_abonados
+descripcion: "Movistar Chile - abonados (ABONADOS_SCRECSA)"
+delimitador: ";"
+codificacion: UTF-8
+tiene_encabezados: true
+separador_decimal: "."
+columnas:
+  - nombre: NUM_IDENT
+    tipo: string
+  - nombre: NUM_TELEFONO
+    tipo: string

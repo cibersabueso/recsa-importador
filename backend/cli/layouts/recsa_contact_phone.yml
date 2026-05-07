@@ -1,0 +1,19 @@
+nombre: recsa_contact_phone
+descripcion: "RECSA Peru - telefonos por codigo cliente"
+delimitador: "|"
+codificacion: UTF-8
+tiene_encabezados: false
+columnas:
+  - posicion: 0
+    nombre: codigo_cliente_interno
+    tipo: string
+    requerido: true
+  - posicion: 1
+    nombre: telefono
+    tipo: string
+  - posicion: 2
+    nombre: tipo_telefono
+    tipo: categorical
+  - posicion: 3
+    nombre: orden
+    tipo: int

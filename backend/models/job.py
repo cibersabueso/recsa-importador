@@ -8,7 +8,7 @@ from models.config import Codificacion, Delimitador, ProcesoConfig, SeparadorDec
 from models.mapeo import ColumnaMapeo
 from models.resultado import ResultadoProceso
 
-EstadoJob = Literal["pending", "processing", "completed", "error"]
+EstadoJob = Literal["encolado", "procesando", "completado", "error", "fallido"]
 TipoOrigen = Literal["sftp", "correo", "teams"]
 
 
@@ -38,6 +38,7 @@ class ArchivoJob(BaseModel):
     columna_clave: str
     columna_join: str | None = None
     columnas: list[ColumnaMapeo]
+    layout: str | None = None
 
 
 class JobPayload(BaseModel):
@@ -51,6 +52,10 @@ class Job(BaseModel):
     status: EstadoJob
     payload: JobPayload
     resultado: ResultadoProceso | None = None
+    pais: str | None = None
+    grupo_prueba: str | None = None
+    config_path: str | None = None
+    nombres_por_archivo: dict[str, list[str]] | None = None
     created_at: str
     updated_at: str
 

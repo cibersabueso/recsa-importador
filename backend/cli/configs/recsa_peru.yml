@@ -1,0 +1,46 @@
+proceso:
+  empresa: RECSA_PERU
+  pais: PERU
+  tipo_carga: ASIGNACION
+  tipo_proceso: INICIAL
+  nombre_interfaz: "RECSA Peru cartera 20260429"
+  responsable: enrique
+  grupo_prueba: recsa_peru_v1
+
+archivos:
+  - layout: recsa_case_assignment
+    ruta: C:/Users/enrique.garrido/Downloads/data2/20260429_carga/case_assignment_R_RECSA_20260429.txt
+    orden: 1
+    columna_clave: numero_operacion
+    columna_join: codigo_cliente_interno
+    mapeos:
+      - origen: numero_operacion
+        destino: numero_documento
+        obligatorio: true
+      - origen: dni_cliente
+        destino: root_cliente
+        obligatorio: true
+      - origen: nombre_cliente
+        destino: nombre_completo
+      - origen: monto_actual
+        destino: monto_deuda_actual
+      - origen: monto_total
+        destino: monto_deuda_original
+      - origen: fecha_vencimiento
+        destino: fecha_vencimiento
+      - origen: dias_mora
+        destino: dias_mora
+      - origen: tramo
+        destino: tramo_mora
+      - origen: producto
+        destino: producto
+      - origen: division
+        destino: sucursal_origen
+
+  - layout: recsa_contact_phone
+    ruta: C:/Users/enrique.garrido/Downloads/data2/20260429_carga/contact_phone_RECSA_20260429.txt
+    orden: 2
+    columna_clave: codigo_cliente_interno
+    mapeos:
+      - origen: telefono
+        destino: telefono_principal

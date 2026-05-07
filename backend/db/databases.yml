@@ -1,0 +1,34 @@
+default: recsa_cargas
+
+paises:
+  PERU:
+    host: localhost
+    port: 5432
+    user: recsa
+    password: recsa123
+    database: recsa_peru
+  CHILE:
+    host: localhost
+    port: 5432
+    user: recsa
+    password: recsa123
+    database: recsa_chile
+  COLOMBIA:
+    host: localhost
+    port: 5432
+    user: recsa
+    password: recsa123
+    database: recsa_colombia
+  ARGENTINA:
+    host: localhost
+    port: 5432
+    user: recsa
+    password: recsa123
+    database: recsa_argentina
+
+default_connection:
+  host: localhost
+  port: 5432
+  user: recsa
+  password: recsa123
+  database: recsa_cargas

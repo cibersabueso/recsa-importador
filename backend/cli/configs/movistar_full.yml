@@ -1,0 +1,94 @@
+proceso:
+  empresa: MOVISTAR_CL
+  pais: CHILE
+  tipo_carga: ASIGNACION
+  tipo_proceso: INICIAL
+  nombre_interfaz: "Movistar full"
+  responsable: enrique
+  grupo_prueba: movistar_v1
+
+archivos:
+  - layout: movistar_documentos
+    ruta: C:/Users/enrique.garrido/Downloads/data/DOCUMENTOS_SCRECSA_20260305.txt
+    orden: 1
+    columna_clave: numero_documento
+    columna_join: root_cliente
+    mapeos:
+      - origen: NUM_FOLIO
+        destino: numero_documento
+        obligatorio: true
+      - origen: NUM_IDENT
+        destino: root_cliente
+        obligatorio: true
+      - origen: FEC_VENC
+        destino: fecha_vencimiento
+        obligatorio: true
+      - origen: IMPORTE
+        destino: monto_deuda_original
+        obligatorio: true
+      - origen: SALDO
+        destino: monto_deuda_actual
+        obligatorio: false
+      - origen: DES_TIPDOC
+        destino: producto
+        obligatorio: false
+      - origen: ORIGEN
+        destino: sucursal_origen
+        obligatorio: false
+      - origen: TRAMO
+        destino: tramo_mora
+        obligatorio: false
+
+  - layout: movistar_contacto
+    ruta: C:/Users/enrique.garrido/Downloads/data/CONTACTO_SCRECSA_20260305.txt
+    orden: 2
+    columna_clave: root_cliente
+    mapeos:
+      - origen: NUM_IDENT
+        destino: root_cliente
+        obligatorio: true
+      - origen: NOM_CLIENTE
+        destino: nombre_completo
+        obligatorio: false
+      - origen: OBS_DIRECCION
+        destino: direccion
+        obligatorio: false
+      - origen: TEL_CONTACTO
+        destino: telefono_principal
+        obligatorio: false
+      - origen: TEL_CONTACTO2
+        destino: telefono_secundario
+        obligatorio: false
+      - origen: EMAIL
+        destino: email
+        obligatorio: false
+
+  - layout: movistar_abonados
+    ruta: C:/Users/enrique.garrido/Downloads/data/ABONADOS_SCRECSA_20260305.txt
+    orden: 3
+    columna_clave: root_cliente
+    mapeos:
+      - origen: NUM_IDENT
+        destino: root_cliente
+        obligatorio: true
+      - origen: NUM_TELEFONO
+        destino: telefono_secundario
+        obligatorio: false
+
+  - layout: movistar_gestiones
+    ruta: C:/Users/enrique.garrido/Downloads/data/GESTIONES_SCRECSA_20260305.txt
+    orden: 4
+    columna_clave: root_cliente
+    mapeos:
+      - origen: NUM_IDENT
+        destino: root_cliente
+        obligatorio: true
+
+  - layout: movistar_movimientos
+    ruta: C:/Users/enrique.garrido/Downloads/data/MOVIMIENTOS_SCRECSA_20260305.txt
+    orden: 5
+    columna_clave: root_cliente
+    mapeos:
+      - origen: NUM_IDENT
+        destino: root_cliente
+        obligatorio: true
