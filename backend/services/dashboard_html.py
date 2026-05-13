@@ -12,6 +12,7 @@ from psycopg import Connection
 
 from db.db_config import DBConfig, cargar_config, resolver_db
 from db.postgres_client import ensure_schema_para_pais, get_connection
+from services._formato_tiempo import formatear_duracion
 
 REPORTES_DIR: Path = Path(__file__).resolve().parent.parent / "reportes"
 DASHBOARD_FILENAME: str = "dashboard.html"
@@ -291,22 +292,6 @@ def _formato_dt(valor: datetime | None) -> str:
     return valor.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _formato_duracion(segundos: int | float | None) -> str:
-    if segundos is None or segundos < 0:
-        return "-"
-    if segundos == 0:
-        return "0s"
-    if segundos < 60:
-        return f"{int(segundos)}s"
-    minutos = int(segundos // 60)
-    seg = int(segundos % 60)
-    if minutos < 60:
-        return f"{minutos}m {seg:02d}s"
-    horas = minutos // 60
-    minutos = minutos % 60
-    return f"{horas}h {minutos:02d}m {seg:02d}s"
-
-
 def _badge_estado(estado: str) -> str:
     clase = ESTADO_BADGE.get(estado, "badge-gray")
     return f'<span class="badge {clase}">{_esc(estado.upper())}</span>'
@@ -380,7 +365,7 @@ def _render_kpis(data: DashboardData) -> str:
     </div>
     <div class="card blue">
       <div class="label">Tiempo total acumulado</div>
-      <div class="value">{_esc(_formato_duracion(total_duracion))}</div>
+      <div class="value">{_esc(formatear_duracion(total_duracion))}</div>
     </div>
   </div>
 </section>
@@ -513,7 +498,7 @@ def _render_grupos(data: DashboardData) -> str:
         <td class="num">{grupo.total_validas:,}</td>
         <td class="num">{grupo.total_errores:,}</td>
         <td class="num">{grupo.total_sin_match:,}</td>
-        <td class="num">{_esc(_formato_duracion(grupo.duracion_promedio_seg))}</td>
+        <td class="num">{_esc(formatear_duracion(grupo.duracion_promedio_seg))}</td>
         <td>{_esc(_formato_dt(grupo.ultimo_job))}</td>
       </tr>
 """
@@ -549,6 +534,18 @@ def _render_grupos(data: DashboardData) -> str:
 """
 
 
+def _render_progreso_celda(job: JobReciente) -> str:
+    if job.estado != "procesando":
+        return '<span class="muted">-</span>'
+    return (
+        f'<div class="progreso-bar" data-job-progress="{_esc(job.job_id)}" '
+        f'title="Esperando datos...">'
+        f'<div class="progreso-fill" style="width: 0%"></div>'
+        f'<span class="progreso-label">Iniciando...</span>'
+        f"</div>"
+    )
+
+
 def _render_recientes(data: DashboardData) -> str:
     if not data.recientes:
         return f"""
@@ -574,10 +571,11 @@ def _render_recientes(data: DashboardData) -> str:
         <td>{_esc(empresa)}</td>
         <td>{_esc(grupo)}</td>
         <td>{_badge_estado(job.estado)}</td>
+        <td class="progreso-celda">{_render_progreso_celda(job)}</td>
         <td class="num">{job.total_filas:,}</td>
         <td class="num">{job.filas_validas:,}</td>
         <td class="num">{job.sin_match:,}</td>
-        <td class="num">{_esc(_formato_duracion(job.duracion_segundos))}</td>
+        <td class="num">{_esc(formatear_duracion(job.duracion_segundos))}</td>
         <td class="acciones">{acciones}</td>
       </tr>
 """
@@ -587,7 +585,8 @@ def _render_recientes(data: DashboardData) -> str:
   <h2>Jobs recientes</h2>
   <p class="muted">
     Últimas {len(data.recientes)} corridas mezcladas de todos los países,
-    ordenadas por fecha de inicio descendente.
+    ordenadas por fecha de inicio descendente. Los jobs en estado
+    <em>procesando</em> muestran progreso en vivo (refresco cada 2s).
   </p>
   <div class="tabla-scroll">
     <table class="recientes">
@@ -598,6 +597,7 @@ def _render_recientes(data: DashboardData) -> str:
           <th>Empresa</th>
           <th>Grupo</th>
           <th>Estado</th>
+          <th>Progreso</th>
           <th class="num">Leídas</th>
           <th class="num">Válidas</th>
           <th class="num">Sin match</th>
@@ -777,6 +777,54 @@ tbody tr:hover { background: #eff6ff; }
 }
 .link:hover { text-decoration: underline; }
 .recientes td { font-size: 0.85rem; }
+.progreso-celda { min-width: 220px; }
+.progreso-bar {
+  position: relative;
+  width: 220px;
+  height: 1.45rem;
+  background: #e5e7eb;
+  border-radius: 0.3rem;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+}
+.progreso-fill {
+  height: 100%;
+  width: 0%;
+  background-color: #1e3a8a;
+  background-image: linear-gradient(
+    45deg,
+    rgba(255,255,255,0.18) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255,255,255,0.18) 50%,
+    rgba(255,255,255,0.18) 75%,
+    transparent 75%
+  );
+  background-size: 18px 18px;
+  animation: progreso-stripes 1.2s linear infinite;
+  transition: width 0.4s ease-out;
+}
+.progreso-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 0 3px rgba(0,0,0,0.55);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  padding: 0 0.4rem;
+}
+@keyframes progreso-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 18px 0; }
+}
 .chart-container {
   position: relative;
   height: 360px;
@@ -803,6 +851,72 @@ footer {
   header { padding: 1.25rem; }
   section { padding: 1.1rem; }
 }
+"""
+
+
+_PROGRESO_SCRIPT: str = """
+(function() {
+  const POLL_MS = 2000;
+
+  function fmt(n) {
+    if (n === null || n === undefined) return '-';
+    return Number(n).toLocaleString('es-CL');
+  }
+
+  function refrescar(container) {
+    const jobId = container.getAttribute('data-job-progress');
+    if (!jobId) return Promise.resolve();
+    return fetch('/api/jobs/' + encodeURIComponent(jobId) + '/progreso', {
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store'
+    })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data) return;
+        const fill = container.querySelector('.progreso-fill');
+        const label = container.querySelector('.progreso-label');
+        if (data.estado !== 'procesando') {
+          container.removeAttribute('data-job-progress');
+          if (fill) fill.style.width = '100%';
+          if (label) label.textContent = String(data.estado || '').toUpperCase();
+          container.title = 'Estado final: ' + (data.estado || '?');
+          return;
+        }
+        const pct = Math.max(0, Math.min(100, Number(data.porcentaje_fase || 0)));
+        const idx = Number(data.fase_indice || 0);
+        const total = Number(data.fase_total || 0);
+        if (fill) fill.style.width = pct.toFixed(1) + '%';
+        if (label) {
+          const fase = total > 0 ? ('Fase ' + idx + '/' + total) : ('Fase ' + idx);
+          label.textContent = fase + ': ' + pct.toFixed(1) + '%';
+        }
+        container.title =
+          (data.fase_actual || '') +
+          '\\n' + fmt(data.filas_procesadas) + ' / ' + fmt(data.filas_totales) + ' filas' +
+          '\\nVelocidad: ' + fmt(data.velocidad_filas_seg) + ' filas/s' +
+          '\\nTranscurrido: ' + fmt(data.tiempo_transcurrido_seg) + 's' +
+          (data.tiempo_estimado_restante_seg !== null && data.tiempo_estimado_restante_seg !== undefined
+            ? '\\nRestante (estim.): ' + fmt(data.tiempo_estimado_restante_seg) + 's'
+            : '');
+      })
+      .catch(function(err) {
+        console.warn('progreso job', jobId, err);
+      });
+  }
+
+  function tick() {
+    const containers = document.querySelectorAll('[data-job-progress]');
+    if (containers.length === 0) return;
+    containers.forEach(refrescar);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tick);
+  } else {
+    tick();
+  }
+  setInterval(tick, POLL_MS);
+})();
 """
 
 
@@ -838,6 +952,7 @@ def generar_dashboard(ruta_salida: Path | None = None) -> Path:
 <div class="container">
 {cuerpo}
 </div>
+<script>{_PROGRESO_SCRIPT}</script>
 </body>
 </html>
 """

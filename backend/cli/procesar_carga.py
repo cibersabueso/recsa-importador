@@ -11,6 +11,7 @@ import yaml
 from db.postgres_client import ensure_schema_para_pais, get_connection
 from models.job import JobPayload
 from services import job_registry, job_runner, queue_service, worker_service
+from services._formato_tiempo import formatear_duracion
 from services.job_logger import configurar_logger
 from services.payload_builder import construir_payload
 from services.progress_tracker import FaseRegistro, ProgressTracker
@@ -25,24 +26,6 @@ def _cargar_config(ruta: Path) -> dict[str, Any]:
     return data
 
 
-def _formato_mmss(segundos: float) -> str:
-    minutos = int(segundos // 60)
-    seg = int(segundos % 60)
-    return f"{minutos:02d}:{seg:02d}"
-
-
-def _formato_duracion(segundos: float) -> str:
-    if segundos < 60:
-        return f"{int(segundos)}s"
-    minutos = int(segundos // 60)
-    seg = int(segundos % 60)
-    if minutos < 60:
-        return f"{minutos}m {seg:02d}s"
-    horas = minutos // 60
-    minutos = minutos % 60
-    return f"{horas}h {minutos:02d}m {seg:02d}s"
-
-
 def _imprimir_reporte_tiempos(fases: list[FaseRegistro]) -> None:
     if not fases:
         return
@@ -53,7 +36,7 @@ def _imprimir_reporte_tiempos(fases: list[FaseRegistro]) -> None:
     total_filas = 0
     total_segundos = 0.0
     for fase in fases:
-        duracion = _formato_duracion(fase.duracion_segundos)
+        duracion = formatear_duracion(fase.duracion_segundos)
         if fase.total > 0:
             filas_str = f"{fase.total:,}"
             total_filas += fase.total
@@ -71,7 +54,7 @@ def _imprimir_reporte_tiempos(fases: list[FaseRegistro]) -> None:
         total_vel = "-"
     fila_total = (
         "TOTAL",
-        _formato_duracion(total_segundos),
+        formatear_duracion(total_segundos),
         f"{total_filas:,}" if total_filas > 0 else "-",
         total_vel,
     )
@@ -144,7 +127,14 @@ def _ejecutar_inline(
         return 1
 
     total_estimado = worker_service._estimar_total_filas(payload.archivos, logger)
-    progress = ProgressTracker(total_estimado, "Procesando job")
+    secundarios = [a for a in payload.archivos if a.orden != 1]
+    fase_total = 3 + len(secundarios) if secundarios else 2
+    progress = ProgressTracker(
+        total_estimado,
+        "Procesando job",
+        job_id=job_id,
+        fase_total=fase_total,
+    )
 
     resultado, transcurrido, ruta_html, db_config = job_runner.ejecutar_postgres(
         job_id=job_id,
@@ -170,7 +160,7 @@ def _ejecutar_inline(
     print(f"Errores:      {resultado.filas_con_error}")
     print(f"Duplicados:   {resultado.duplicados}")
     print(f"Sin match:    {resultado.sin_match}")
-    print(f"Tiempo:       {_formato_mmss(transcurrido)}")
+    print(f"Tiempo:       {formatear_duracion(transcurrido)}")
     print(f"Resultado:    {resultado.archivo_resultado}")
     print(f"Log:          backend/logs/{job_id}.log")
     if ruta_html is not None:

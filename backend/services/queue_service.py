@@ -102,8 +102,23 @@ def _serializar_para_redis(valor: Any) -> str:
     return str(valor)
 
 
-def _mapping_para_redis(mapping: dict[str, Any]) -> dict[str, str]:
-    return {clave: _serializar_para_redis(valor) for clave, valor in mapping.items()}
+def _mapping_seguro(
+    operacion: str, identificador: str, datos: dict[str, Any]
+) -> dict[str, str]:
+    mapping: dict[str, str] = {
+        clave: _serializar_para_redis(valor)
+        for clave, valor in datos.items()
+        if valor is not None
+    }
+    omitidos = sorted(clave for clave, valor in datos.items() if valor is None)
+    if omitidos:
+        logger.debug(
+            "%s %s: campos omitidos por None (no se persisten en Redis): %s",
+            operacion,
+            identificador,
+            omitidos,
+        )
+    return mapping
 
 
 def _hash_a_job(datos: dict[str, Any]) -> Job:
@@ -167,18 +182,7 @@ def encolar_job(
         "created_at": ahora,
         "updated_at": ahora,
     }
-    mapping: dict[str, str] = {
-        clave: _serializar_para_redis(valor)
-        for clave, valor in datos.items()
-        if valor is not None
-    }
-    omitidos = sorted(clave for clave, valor in datos.items() if valor is None)
-    if omitidos:
-        logger.debug(
-            "encolar_job %s: campos omitidos por None (no se persisten en Redis): %s",
-            job_id,
-            omitidos,
-        )
+    mapping = _mapping_seguro("encolar_job", job_id, datos)
     pipe = cliente.pipeline()
     pipe.hset(_job_key(job_id), mapping=mapping)
     pipe.lpush(PENDING_QUEUE_KEY, job_id)
@@ -205,8 +209,8 @@ def dequeue() -> Job | None:
         return None
     cliente.hset(
         clave,
-        mapping=_mapping_para_redis(
-            {"status": "procesando", "updated_at": ahora}
+        mapping=_mapping_seguro(
+            "dequeue", job_id, {"status": "procesando", "updated_at": ahora}
         ),
     )
     datos = cliente.hgetall(clave)
@@ -259,8 +263,10 @@ def mover_a_failed(job_id: str, motivo: str) -> None:
     pipe.lpush(FAILED_QUEUE_KEY, entrada)
     pipe.hset(
         _job_key(job_id),
-        mapping=_mapping_para_redis(
-            {"status": "fallido", "updated_at": _ahora()}
+        mapping=_mapping_seguro(
+            "mover_a_failed",
+            job_id,
+            {"status": "fallido", "updated_at": _ahora()},
         ),
     )
     pipe.execute()
@@ -285,13 +291,14 @@ def set_supervisor_meta(
     ttl_segundos: int = SUPERVISOR_META_TTL_DEFAULT,
 ) -> None:
     cliente = _cliente()
-    mapping = _mapping_para_redis(
-        {
-            "max_workers": max_workers,
-            "min_workers": min_workers,
-            "updated_at": _ahora(),
-        }
-    )
+    datos: dict[str, Any] = {
+        "max_workers": max_workers,
+        "min_workers": min_workers,
+        "updated_at": _ahora(),
+    }
+    mapping = _mapping_seguro("set_supervisor_meta", SUPERVISOR_META_KEY, datos)
+    if not mapping:
+        return
     pipe = cliente.pipeline()
     pipe.hset(SUPERVISOR_META_KEY, mapping=mapping)
     pipe.expire(SUPERVISOR_META_KEY, ttl_segundos)
@@ -320,15 +327,18 @@ def update_status(
     clave = _job_key(job_id)
     if not cliente.exists(clave):
         return None
-    ahora = _ahora()
-    mapping: dict[str, Any] = {"status": status, "updated_at": ahora}
-    if resultado is not None:
-        mapping["resultado"] = resultado
-    cliente.hset(clave, mapping=_mapping_para_redis(mapping))
-    datos = cliente.hgetall(clave)
-    if not datos:
+    datos: dict[str, Any] = {
+        "status": status,
+        "updated_at": _ahora(),
+        "resultado": resultado,
+    }
+    mapping = _mapping_seguro("update_status", job_id, datos)
+    if mapping:
+        cliente.hset(clave, mapping=mapping)
+    salida = cliente.hgetall(clave)
+    if not salida:
         return None
-    return _hash_a_job(datos)
+    return _hash_a_job(salida)
 
 
 def update_progreso(job_id: str, resultado: ResultadoProceso) -> None:
@@ -336,12 +346,14 @@ def update_progreso(job_id: str, resultado: ResultadoProceso) -> None:
     clave = _job_key(job_id)
     if not cliente.exists(clave):
         return
-    cliente.hset(
-        clave,
-        mapping=_mapping_para_redis(
-            {"resultado": resultado, "updated_at": _ahora()}
-        ),
-    )
+    datos: dict[str, Any] = {
+        "resultado": resultado,
+        "updated_at": _ahora(),
+    }
+    mapping = _mapping_seguro("update_progreso", job_id, datos)
+    if not mapping:
+        return
+    cliente.hset(clave, mapping=mapping)
 
 
 def obtener_job(job_id: str) -> Job | None:

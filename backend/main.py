@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from routers.config import preview_router
 from routers.config import router as config_router
+from routers.demo import router as demo_router
 from routers.jobs import router as jobs_router
 from routers.mapeo import router as mapeo_router
 from routers.proceso import router as proceso_router
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(jobs_router)
+app.include_router(demo_router)
 app.include_router(upload_router)
 app.include_router(config_router)
 app.include_router(preview_router)

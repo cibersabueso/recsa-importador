@@ -6,7 +6,11 @@ from typing import Protocol, TextIO
 
 from psycopg import Connection
 
-from db.postgres_client import BulkWriter
+from db.postgres_client import (
+    BulkWriter,
+    ensure_tabla_cliente,
+    regenerar_vista_cargas_unificada,
+)
 from utils.validators import CAMPOS_ESTANDAR
 
 
@@ -41,10 +45,23 @@ class CsvSink:
 
 class PostgresSink:
     def __init__(
-        self, conn: Connection, job_id: str, batch_size: int = 5000
+        self,
+        conn: Connection,
+        job_id: str,
+        nombre_tabla: str,
+        batch_size: int = 5000,
     ) -> None:
-        self._writer: BulkWriter = BulkWriter(conn, job_id, batch_size=batch_size)
+        ensure_tabla_cliente(conn, nombre_tabla)
+        regenerar_vista_cargas_unificada(conn)
+        self._nombre_tabla: str = nombre_tabla
+        self._writer: BulkWriter = BulkWriter(
+            conn, job_id, nombre_tabla, batch_size=batch_size
+        )
         self._cerrado: bool = False
+
+    @property
+    def nombre_tabla(self) -> str:
+        return self._nombre_tabla
 
     def write(self, fila: dict[str, str | None]) -> None:
         self._writer.write([fila])

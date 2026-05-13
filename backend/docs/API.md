@@ -102,6 +102,10 @@ Encola un nuevo job. Misma estructura que los YAML de `backend/cli/configs/`.
 ```
 
 Campos clave:
+- `proceso.empresa`: nombre del cliente. Define la **tabla de precarga aislada
+  por cliente**: cada empresa escribe a su propia tabla `cargas_<empresa
+  normalizada>` dentro de la BD del país, evitando contención entre clientes
+  que cargan en simultáneo (ver sección "Persistencia multi-cliente").
 - `proceso.pais` (opcional): código del país (PERU/CHILE/COLOMBIA/ARGENTINA).
   Resuelve la BD destino. Si se omite, cae a `recsa_cargas` (default).
 - `proceso.grupo_prueba` (opcional): etiqueta para agrupar jobs (`movistar_v3`,
@@ -114,6 +118,13 @@ Campos clave:
   (orden=1) o de cruce en secundarios.
 - `archivos[].columna_join` (opcional): si difiere de `columna_clave`, se usa
   para cruzar 1:N con secundarios (ej: una factura tiene N teléfonos).
+
+Límites del payload:
+- **Máximo 200 mapeos sumados entre todos los archivos** del job. Si el config
+  excede este tope, `POST /api/jobs` responde 400 con
+  `Límite de columnas excedido: <N> > 200`. El límite vale por tabla destino;
+  como hoy todos los mapeos terminan en la misma tabla del cliente, se cuenta
+  el total agregado.
 
 ### Response — 202 Accepted
 
@@ -460,3 +471,53 @@ procesos a la fuerza con `terminate()`.
 `GET /api/health` expone `cola_pendiente`, `workers_activos` y `workers_max`
 para que Dante muestre en tiempo real cuántos jobs están esperando y cuántos
 motores están procesando. Ver la sección de health más arriba.
+
+---
+
+## Persistencia multi-cliente
+
+Cada cliente (mandante) tiene su propia tabla de precarga dentro de la BD del
+país. Si Movistar y otra empresa cargan al mismo tiempo en Chile, escriben a
+tablas distintas y no se pelean por locks.
+
+### Convención de nombre de tabla
+
+`cargas_<empresa normalizada>`. La normalización pasa el `proceso.empresa` a
+lowercase, le saca tildes/ñ y reemplaza caracteres fuera de `[a-z0-9_]` por
+`_`. Ejemplos:
+
+| `proceso.empresa` | Tabla destino |
+| --- | --- |
+| `MOVISTAR_CL` | `cargas_movistar_cl` |
+| `RECSA_PERU` | `cargas_recsa_peru` |
+| `BANCO FRANCES` | `cargas_banco_frances` |
+| `Banco Francés` | `cargas_banco_frances` |
+
+Postgres limita los identificadores a 63 caracteres. Si el nombre supera 60
+caracteres, se trunca a 50 y se le agrega `_` + los primeros 8 caracteres del
+MD5 del nombre original para evitar colisiones entre empresas con prefijos
+largos compartidos.
+
+### Ciclo de vida de las tablas
+
+- Las tablas `cargas_<cliente>` se crean **on-demand** al procesar el primer
+  job de cada cliente (vía `CREATE TABLE IF NOT EXISTS`). `python -m db.init_db`
+  solo crea `cargas_jobs` (metadatos); no toca las tablas por cliente.
+- Después de crear/asegurar la tabla, el motor regenera la vista
+  `cargas_unificada` (DROP + CREATE) con `UNION ALL` de todas las tablas
+  `cargas_*` actuales y una columna extra `tabla_origen` (el sufijo sin
+  prefijo). Esta vista alimenta los reportes globales y permite consultas
+  cross-cliente.
+
+### Consulta cross-cliente
+
+```sql
+SELECT tabla_origen, COUNT(*) AS filas, COUNT(DISTINCT job_id) AS jobs
+FROM cargas_unificada
+GROUP BY tabla_origen
+ORDER BY filas DESC;
+```
+
+Si todavía no se procesó ningún job, `cargas_unificada` no existe y la query
+levanta `UndefinedTable`. El reporte HTML por job atrapa el error y devuelve
+muestra/calidad vacías para que el render no crashee.

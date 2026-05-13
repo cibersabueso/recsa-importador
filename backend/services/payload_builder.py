@@ -15,6 +15,8 @@ from models.job import ArchivoJob, JobPayload
 from models.mapeo import ColumnaMapeo
 from utils.file_parser import detectar_tipo
 
+MAX_COLUMNAS_MAPEADAS: int = 200
+
 
 def _construir_archivo(
     archivo_raw: dict[str, Any],
@@ -93,12 +95,18 @@ def construir_payload(
     layouts_cache: dict[str, Layout] = {}
     archivos: list[ArchivoJob] = []
     nombres_por_archivo: dict[str, list[str]] = {}
+    total_mapeos = 0
     for archivo_raw in archivos_raw:
         if not isinstance(archivo_raw, dict):
             raise ValueError("Cada archivo debe ser un mapping")
         archivo, nombres = _construir_archivo(archivo_raw, layouts_cache)
         archivos.append(archivo)
+        total_mapeos += len(archivo.columnas)
         if nombres:
             nombres_por_archivo[archivo.archivo_id] = nombres
+    if total_mapeos > MAX_COLUMNAS_MAPEADAS:
+        raise ValueError(
+            f"Límite de columnas excedido: {total_mapeos} > {MAX_COLUMNAS_MAPEADAS}"
+        )
     payload = JobPayload(proceso=proceso, archivos=archivos)
     return payload, nombres_por_archivo, grupo_prueba

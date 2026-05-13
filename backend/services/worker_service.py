@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from psycopg import Connection
 
+from db._nombres import nombre_tabla_cliente
 from db.db_config import resolver_db
 from db.postgres_client import ensure_schema, get_connection
 from models.job import ArchivoJob, Job, JobPayload
@@ -162,10 +163,12 @@ def _crear_sink(
     db_config = resolver_db(pais)
     ensure_schema(db_config)
     conn = get_connection(db_config)
-    sink = PostgresSink(conn, job_id)
+    nombre_tabla = nombre_tabla_cliente(payload.proceso.empresa)
+    sink = PostgresSink(conn, job_id, nombre_tabla)
     pais_label = pais.strip().upper() if pais else "default"
     identificador = (
-        f"postgres://{db_config.database}.cargas?job_id={job_id}&pais={pais_label}"
+        f"postgres://{db_config.database}.{nombre_tabla}"
+        f"?job_id={job_id}&pais={pais_label}"
     )
     return sink, identificador, conn
 

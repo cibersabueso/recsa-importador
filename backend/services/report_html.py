@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from psycopg import Connection
+from psycopg.errors import UndefinedTable
 
 from models.job import JobPayload
 from models.resultado import EstadisticasArchivo, ResultadoProceso
+from services._formato_tiempo import formatear_duracion
 from services.progress_tracker import FaseRegistro
+
+logger = logging.getLogger("recsa.report")
 
 REPORTES_DIR: Path = Path(__file__).resolve().parent.parent / "reportes"
 
@@ -47,6 +52,10 @@ PALETA_FASES: tuple[str, ...] = (
 )
 
 
+def _calidad_vacia() -> dict[str, int]:
+    return {clave: 0 for clave, _ in CAMPOS_CALIDAD} | {"total": 0}
+
+
 def consultar_calidad_datos(conn: Connection, job_id: str) -> dict[str, int]:
     sql = """
         SELECT
@@ -58,14 +67,22 @@ def consultar_calidad_datos(conn: Connection, job_id: str) -> dict[str, int]:
             COUNT(*) FILTER (WHERE monto_deuda_actual IS NOT NULL) AS con_monto,
             COUNT(*) FILTER (WHERE fecha_vencimiento IS NOT NULL) AS con_fecha,
             COUNT(*) AS total
-        FROM cargas
+        FROM cargas_unificada
         WHERE job_id = %s
     """
-    with conn.cursor() as cur:
-        cur.execute(sql, (job_id,))
-        row = cur.fetchone()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (job_id,))
+            row = cur.fetchone()
+    except UndefinedTable:
+        conn.rollback()
+        logger.warning(
+            "Vista cargas_unificada no existe todavía; calidad vacía para job %s",
+            job_id,
+        )
+        return _calidad_vacia()
     if row is None:
-        return {clave: 0 for clave, _ in CAMPOS_CALIDAD} | {"total": 0}
+        return _calidad_vacia()
     keys = [clave for clave, _ in CAMPOS_CALIDAD] + ["total"]
     return dict(zip(keys, [int(v or 0) for v in row]))
 
@@ -75,25 +92,21 @@ def consultar_muestra(
 ) -> list[dict[str, Any]]:
     columnas_sql = ", ".join(COLUMNAS_MUESTRA)
     sql = (
-        f"SELECT {columnas_sql} FROM cargas WHERE job_id = %s "
+        f"SELECT {columnas_sql} FROM cargas_unificada WHERE job_id = %s "
         "ORDER BY id ASC LIMIT %s"
     )
-    with conn.cursor() as cur:
-        cur.execute(sql, (job_id, limite))
-        rows = cur.fetchall()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (job_id, limite))
+            rows = cur.fetchall()
+    except UndefinedTable:
+        conn.rollback()
+        logger.warning(
+            "Vista cargas_unificada no existe todavía; muestra vacía para job %s",
+            job_id,
+        )
+        return []
     return [dict(zip(COLUMNAS_MUESTRA, fila)) for fila in rows]
-
-
-def _formato_mmss(segundos: float) -> str:
-    if segundos < 60:
-        return f"{int(segundos)}s"
-    minutos = int(segundos // 60)
-    seg = int(segundos % 60)
-    if minutos < 60:
-        return f"{minutos}m {seg:02d}s"
-    horas = minutos // 60
-    minutos = minutos % 60
-    return f"{horas}h {minutos:02d}m {seg:02d}s"
 
 
 def _formato_bytes(bytes_: int) -> str:
@@ -168,7 +181,7 @@ def _render_header(
     <div><strong>Responsable:</strong> {_esc(proceso.responsable)}</div>
     <div><strong>Inicio:</strong> {_esc(inicio_str)}</div>
     <div><strong>Fin:</strong> {_esc(fin_str)}</div>
-    <div><strong>Duración total:</strong> {_esc(_formato_mmss(duracion))}</div>
+    <div><strong>Duración total:</strong> {_esc(formatear_duracion(duracion))}</div>
     <div><strong>Tipo de carga:</strong> {_esc(proceso.tipo_carga)}</div>
     <div><strong>Tipo de proceso:</strong> {_esc(proceso.tipo_proceso)}</div>
   </div>
@@ -250,7 +263,7 @@ def _render_timeline(fases: list[FaseRegistro]) -> str:
     labels = [f.nombre for f in fases]
     duraciones = [round(f.duracion_segundos, 2) for f in fases]
     colores = [PALETA_FASES[i % len(PALETA_FASES)] for i in range(len(fases))]
-    etiquetas_duracion = [_formato_mmss(f.duracion_segundos) for f in fases]
+    etiquetas_duracion = [formatear_duracion(f.duracion_segundos) for f in fases]
     data = {
         "labels": labels,
         "duraciones": duraciones,
@@ -339,7 +352,7 @@ def _render_archivos(
         tamano = _tamano_archivo(archivo.ruta)
         fase = _fase_por_archivo(fases, archivo.nombre)
         duracion = (
-            _formato_mmss(fase.duracion_segundos) if fase is not None else "-"
+            formatear_duracion(fase.duracion_segundos) if fase is not None else "-"
         )
         velocidad = "-"
         if fase is not None and fase.duracion_segundos > 0:
@@ -412,7 +425,7 @@ def _render_muestra(datos: list[dict[str, Any]]) -> str:
     return f"""
 <section>
   <h2>Muestra de datos generados</h2>
-  <p class="muted">Primeras {len(datos)} filas insertadas en <code>cargas</code>.</p>
+  <p class="muted">Primeras {len(datos)} filas insertadas en <code>cargas_unificada</code>.</p>
   <div class="tabla-scroll">
     <table>
       <thead><tr>{encabezados}</tr></thead>

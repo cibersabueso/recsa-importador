@@ -10,7 +10,9 @@ from db.postgres_client import ensure_schema
 def _aplicar(db_config: DBConfig, etiqueta: str) -> None:
     ensure_schema(db_config)
     print(
-        f"Schema OK en {db_config.host}:{db_config.port}/{db_config.database} ({etiqueta})"
+        f"Schema cargas_jobs OK en "
+        f"{db_config.host}:{db_config.port}/{db_config.database} ({etiqueta}). "
+        "Las tablas cargas_<cliente> se crean on-demand al primer job."
     )
 
 

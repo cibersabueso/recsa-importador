@@ -23,8 +23,8 @@ WORKER_LOGS_DIR: Path = Path(__file__).resolve().parent.parent / "logs"
 DEFAULT_MAX_WORKERS = 20
 DEFAULT_MIN_WORKERS = 0
 DEFAULT_CHECK_INTERVAL = 2
-DEFAULT_IDLE_TIMEOUT = 30
-DEQUEUE_TIMEOUT_SECONDS = 1
+DEFAULT_DEQUEUE_TIMEOUT = 5
+DEFAULT_IDLE_CYCLES = 6
 SHUTDOWN_GRACE_SECONDS = 30
 
 
@@ -127,7 +127,13 @@ def _procesar_job_id(
     queue_service.update_status(job_id, "procesando")
 
     total_estimado = worker_service._estimar_total_filas(payload.archivos, job_logger)
-    progress = ProgressTracker(total_estimado, f"Job {job_id[:8]}")
+    fase_total = _estimar_fase_total(payload)
+    progress = ProgressTracker(
+        total_estimado,
+        f"Job {job_id[:8]}",
+        job_id=job_id,
+        fase_total=fase_total,
+    )
     try:
         resultado, _, _, _ = job_runner.ejecutar_postgres(
             job_id=job_id,
@@ -151,13 +157,27 @@ def _procesar_job_id(
         queue_service.eliminar_de_processing(worker_id, job_id)
 
 
-def _loop_worker(idx: int, idle_timeout: int) -> None:
+def _estimar_fase_total(payload: object) -> int:
+    archivos = getattr(payload, "archivos", [])
+    if not archivos:
+        return 2
+    secundarios = [a for a in archivos if getattr(a, "orden", 1) != 1]
+    if not secundarios:
+        return 2
+    return 3 + len(secundarios)
+
+
+def _loop_worker(idx: int, dequeue_timeout: int, idle_cycles: int) -> None:
     pid = os.getpid()
     worker_id = str(pid)
     log = _configurar_logger_worker(pid)
 
     log.info(
-        "Worker #%d (pid=%d) iniciado, idle_timeout=%ds", idx, pid, idle_timeout
+        "Worker #%d (pid=%d) iniciado, dequeue_timeout=%ds, idle_cycles=%d",
+        idx,
+        pid,
+        dequeue_timeout,
+        idle_cycles,
     )
 
     stop_event = threading.Event()
@@ -177,12 +197,12 @@ def _loop_worker(idx: int, idle_timeout: int) -> None:
             "Worker #%d reencoló %d job(s) huérfanos de processing", idx, pendientes
         )
 
-    ultima_actividad = time.monotonic()
+    ciclos_vacios = 0
 
     while not stop_event.is_set():
         try:
             job_id = queue_service.dequeue_seguro(
-                worker_id, timeout=DEQUEUE_TIMEOUT_SECONDS
+                worker_id, timeout=dequeue_timeout
             )
         except Exception as error:  # noqa: BLE001
             log.exception("Worker #%d falló al hacer dequeue: %s", idx, error)
@@ -190,18 +210,18 @@ def _loop_worker(idx: int, idle_timeout: int) -> None:
             continue
 
         if job_id is None:
-            inactivo_seg = time.monotonic() - ultima_actividad
-            if inactivo_seg >= idle_timeout:
+            ciclos_vacios += 1
+            if ciclos_vacios >= idle_cycles:
                 log.info(
-                    "Worker #%d inactivo %ds (umbral %ds), terminando",
+                    "Worker #%d sin trabajo durante %d ciclo(s) (%ds), terminando",
                     idx,
-                    int(inactivo_seg),
-                    idle_timeout,
+                    ciclos_vacios,
+                    ciclos_vacios * dequeue_timeout,
                 )
                 break
             continue
 
-        ultima_actividad = time.monotonic()
+        ciclos_vacios = 0
         log.info("Worker #%d tomó job %s", idx, job_id)
         try:
             _procesar_job_id(job_id, worker_id, log)
@@ -214,7 +234,6 @@ def _loop_worker(idx: int, idle_timeout: int) -> None:
             except Exception:  # noqa: BLE001
                 log.exception("No se pudo marcar fallido tras crash")
             queue_service.eliminar_de_processing(worker_id, job_id)
-        ultima_actividad = time.monotonic()
 
     drenados = queue_service.reencolar_de_processing(worker_id)
     if drenados > 0:
@@ -240,7 +259,8 @@ def _supervisor(
     max_workers: int,
     min_workers: int,
     check_interval: int,
-    idle_timeout: int,
+    dequeue_timeout: int,
+    idle_cycles: int,
 ) -> None:
     log = _configurar_logger_supervisor()
 
@@ -255,11 +275,12 @@ def _supervisor(
         log.warning("No se pudo publicar supervisor meta inicial: %s", error)
 
     log.info(
-        "Supervisor iniciado (max=%d, min=%d, check=%ds, idle=%ds)",
+        "Supervisor iniciado (max=%d, min=%d, check=%ds, dequeue=%ds, idle_cycles=%d)",
         max_workers,
         min_workers,
         check_interval,
-        idle_timeout,
+        dequeue_timeout,
+        idle_cycles,
     )
 
     procesos: list[mp.Process] = []
@@ -272,11 +293,12 @@ def _supervisor(
         proximo_idx += 1
         proceso = mp.Process(
             target=_loop_worker,
-            args=(idx, idle_timeout),
+            args=(idx, dequeue_timeout, idle_cycles),
             name=f"recsa-worker-{idx}",
         )
         proceso.start()
         procesos.append(proceso)
+        log.info("Spawn worker idx=%d pid=%s", idx, proceso.pid)
         return proceso
 
     def _shutdown(signum: int, _frame: object) -> None:
@@ -299,8 +321,21 @@ def _supervisor(
     for _ in range(min_workers):
         _spawn()
 
+    inicio_idle: float | None = None
+
     while not detener.is_set():
-        procesos[:] = [p for p in procesos if p.is_alive()]
+        muertos: list[mp.Process] = []
+        vivos_lista: list[mp.Process] = []
+        for p in procesos:
+            if p.is_alive():
+                vivos_lista.append(p)
+            else:
+                muertos.append(p)
+        for p in muertos:
+            exitcode = p.exitcode
+            motivo = "ok" if exitcode == 0 else f"exitcode={exitcode}"
+            log.info("Reap worker pid=%s name=%s (%s)", p.pid, p.name, motivo)
+        procesos[:] = vivos_lista
 
         try:
             cola = queue_service.tamano_cola()
@@ -311,23 +346,51 @@ def _supervisor(
         vivos = len(procesos)
         nuevos = _decidir_spawn(cola, vivos, max_workers, min_workers)
 
+        if cola > 0 and vivos == 0 and nuevos == 0:
+            log.warning(
+                "Cola=%d sin workers vivos pero spawn=0 (max=%d, min=%d)",
+                cola,
+                max_workers,
+                min_workers,
+            )
+
         if nuevos > 0:
             for _ in range(nuevos):
                 _spawn()
+            inicio_idle = None
             sys.stdout.write(
                 f"[{_ts()}] cola={cola}  workers={vivos + nuevos}  "
                 f"-> levantando {nuevos} nuevos\n"
             )
+        elif cola == 0 and vivos == 0:
+            ahora = time.monotonic()
+            if inicio_idle is None:
+                inicio_idle = ahora
+                sys.stdout.write(
+                    f"[{_ts()}] cola=0  workers=0  -> idle (inicio)\n"
+                )
+            else:
+                segundos_idle = int(ahora - inicio_idle)
+                sys.stdout.write(
+                    f"[{_ts()}] cola=0  workers=0  -> idle ({segundos_idle}s)\n"
+                )
         elif cola == 0:
+            inicio_idle = None
             sys.stdout.write(
-                f"[{_ts()}] cola={cola}  workers={vivos}  -> idle\n"
+                f"[{_ts()}] cola=0  workers={vivos}  -> drenando\n"
             )
         else:
-            estado = (
-                "saturado"
-                if vivos >= max_workers
-                else "estable"
-            )
+            inicio_idle = None
+            if vivos >= max_workers:
+                log.warning(
+                    "Cola=%d con %d workers (saturado en max=%d)",
+                    cola,
+                    vivos,
+                    max_workers,
+                )
+                estado = "saturado"
+            else:
+                estado = "estable"
             sys.stdout.write(
                 f"[{_ts()}] cola={cola}  workers={vivos}  -> {estado}\n"
             )
@@ -410,12 +473,22 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--idle-timeout",
+        "--dequeue-timeout",
         type=int,
-        default=DEFAULT_IDLE_TIMEOUT,
+        default=DEFAULT_DEQUEUE_TIMEOUT,
         help=(
-            f"Segundos sin trabajo antes de que un worker termine "
-            f"(default {DEFAULT_IDLE_TIMEOUT})"
+            f"Segundos del BRPOP del worker "
+            f"(default {DEFAULT_DEQUEUE_TIMEOUT})"
+        ),
+    )
+    parser.add_argument(
+        "--idle-cycles",
+        type=int,
+        default=DEFAULT_IDLE_CYCLES,
+        help=(
+            f"Ciclos consecutivos sin job antes de que un worker termine "
+            f"(default {DEFAULT_IDLE_CYCLES} = "
+            f"{DEFAULT_IDLE_CYCLES * DEFAULT_DEQUEUE_TIMEOUT}s con dequeue por defecto)"
         ),
     )
     args = parser.parse_args()
@@ -431,15 +504,23 @@ def main() -> None:
     if args.check_interval < 1:
         print("--check-interval debe ser >= 1", file=sys.stderr)
         sys.exit(1)
-    if args.idle_timeout < 1:
-        print("--idle-timeout debe ser >= 1", file=sys.stderr)
+    if args.dequeue_timeout < 1:
+        print("--dequeue-timeout debe ser >= 1", file=sys.stderr)
+        sys.exit(1)
+    if args.idle_cycles < 1:
+        print("--idle-cycles debe ser >= 1", file=sys.stderr)
         sys.exit(1)
 
     print("Supervisor RECSA Cargas")
     print(f"  max_workers     = {args.max_workers}")
     print(f"  min_workers     = {args.min_workers}")
     print(f"  check_interval  = {args.check_interval}s")
-    print(f"  idle_timeout    = {args.idle_timeout}s")
+    print(f"  dequeue_timeout = {args.dequeue_timeout}s")
+    print(f"  idle_cycles     = {args.idle_cycles}")
+    print(
+        f"  idle_total      = "
+        f"{args.idle_cycles * args.dequeue_timeout}s sin job antes de terminar"
+    )
     print(f"  logs por worker = {WORKER_LOGS_DIR / 'worker_<pid>.log'}")
     print("  Ctrl+C para terminar")
     print()
@@ -448,7 +529,8 @@ def main() -> None:
         max_workers=args.max_workers,
         min_workers=args.min_workers,
         check_interval=args.check_interval,
-        idle_timeout=args.idle_timeout,
+        dequeue_timeout=args.dequeue_timeout,
+        idle_cycles=args.idle_cycles,
     )
 
 

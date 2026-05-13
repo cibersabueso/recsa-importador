@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from db.db_config import DBConfig, cargar_config, resolver_db
 from db.postgres_client import ensure_schema_para_pais, get_connection
-from services import job_registry, queue_service
+from services import job_registry, progress_reader, queue_service
 from services.dashboard_html import (
     DASHBOARD_FILENAME,
     generar_dashboard,
@@ -195,6 +195,91 @@ def obtener_job(job_id: str) -> dict[str, Any]:
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Job no encontrado: {job_id}",
     )
+
+
+@router.get(
+    "/jobs/{job_id}/progreso",
+    responses={
+        200: {"description": "Progreso del job (vivo o snapshot final)"},
+        404: {"description": "Job no encontrado en ninguna BD"},
+    },
+)
+def obtener_progreso(job_id: str) -> dict[str, Any]:
+    """
+    Devuelve el progreso del job. Si está en estado 'procesando' lee el
+    hash 'recsa:progress:{id}' de Redis (fase, %, velocidad, ETA). Si está
+    en otro estado, devuelve los totales finales de cargas_jobs.
+    """
+    fila: dict[str, Any] | None = None
+    pais_codigo = "default"
+    for codigo, cfg in _configs_paises():
+        try:
+            ensure_schema_para_pais(codigo if codigo != "default" else None)
+            conn = get_connection(cfg)
+            try:
+                fila = job_registry.consultar_job(conn, job_id)
+            finally:
+                conn.close()
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "No se pudo consultar BD '%s' (%s): %s",
+                codigo,
+                cfg.database,
+                error,
+            )
+            continue
+        if fila is not None:
+            pais_codigo = codigo
+            break
+
+    if fila is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job no encontrado: {job_id}",
+        )
+
+    estado = str(fila.get("estado") or "")
+    respuesta: dict[str, Any] = {
+        "job_id": job_id,
+        "pais": pais_codigo,
+        "estado": estado,
+    }
+
+    if estado == "procesando":
+        progreso = progress_reader.leer_progreso(job_id)
+        if progreso is None:
+            respuesta.update(
+                {
+                    "fase_actual": None,
+                    "fase_indice": 0,
+                    "fase_total": 0,
+                    "porcentaje_fase": 0.0,
+                    "filas_procesadas": 0,
+                    "filas_totales": 0,
+                    "velocidad_filas_seg": 0,
+                    "tiempo_transcurrido_seg": 0,
+                    "tiempo_estimado_restante_seg": None,
+                }
+            )
+        else:
+            respuesta.update(progreso)
+            respuesta["job_id"] = job_id
+        return respuesta
+
+    respuesta.update(
+        {
+            "iniciado_en": fila.get("iniciado_en"),
+            "terminado_en": fila.get("terminado_en"),
+            "duracion_segundos": fila.get("duracion_segundos"),
+            "total_filas": fila.get("total_filas"),
+            "filas_validas": fila.get("filas_validas"),
+            "filas_con_error": fila.get("filas_con_error"),
+            "duplicados": fila.get("duplicados"),
+            "sin_match": fila.get("sin_match"),
+            "error_mensaje": fila.get("error_mensaje"),
+        }
+    )
+    return respuesta
 
 
 @router.get(

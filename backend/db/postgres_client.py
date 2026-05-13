@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import psycopg
-from psycopg import Connection
+from psycopg import Connection, sql
 
 from db.conversiones import to_date_ddmmyyyy, to_decimal, to_int, to_text
 from db.db_config import DBConfig, resolver_db
 
+logger = logging.getLogger("recsa.db")
 
 COLUMNAS_CARGAS: tuple[str, ...] = (
     "job_id",
@@ -31,6 +34,26 @@ COLUMNAS_CARGAS: tuple[str, ...] = (
     "tramo_mora",
 )
 
+COLUMNAS_VISTA_UNIFICADA: tuple[str, ...] = (
+    "id",
+    "job_id",
+    "root_cliente",
+    "nombre_completo",
+    "direccion",
+    "telefono_principal",
+    "telefono_secundario",
+    "email",
+    "monto_deuda_original",
+    "monto_deuda_actual",
+    "fecha_vencimiento",
+    "numero_documento",
+    "producto",
+    "sucursal_origen",
+    "dias_mora",
+    "tramo_mora",
+    "fecha_carga",
+)
+
 LIMITES_TEXTO: dict[str, int] = {
     "root_cliente": 50,
     "nombre_completo": 200,
@@ -46,6 +69,14 @@ LIMITES_TEXTO: dict[str, int] = {
 CAMPOS_DECIMAL: frozenset[str] = frozenset({"monto_deuda_original", "monto_deuda_actual"})
 CAMPOS_FECHA: frozenset[str] = frozenset({"fecha_vencimiento"})
 CAMPOS_INT: frozenset[str] = frozenset({"dias_mora"})
+
+VISTA_UNIFICADA: str = "cargas_unificada"
+PREFIJO_TABLA_CLIENTE: str = "cargas_"
+TABLA_METADATOS_JOBS: str = "cargas_jobs"
+PATRON_NOMBRE_TABLA: re.Pattern[str] = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+
+SCHEMA_JOBS_PATH: Path = Path(__file__).parent / "schema_jobs.sql"
+SCHEMA_TEMPLATE_PATH: Path = Path(__file__).parent / "schema_template.sql"
 
 
 def get_connection(db_config: DBConfig | None = None) -> Connection:
@@ -72,11 +103,10 @@ def get_connection(db_config: DBConfig | None = None) -> Connection:
 
 
 def ensure_schema(db_config: DBConfig | None = None) -> None:
-    schema_path = Path(__file__).parent / "schema.sql"
-    sql = schema_path.read_text(encoding="utf-8")
+    sql_text = SCHEMA_JOBS_PATH.read_text(encoding="utf-8")
     with get_connection(db_config) as conn:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql_text)
         conn.commit()
 
 
@@ -84,6 +114,89 @@ def ensure_schema_para_pais(pais: str | None) -> DBConfig:
     db_config = resolver_db(pais)
     ensure_schema(db_config)
     return db_config
+
+
+def _validar_nombre_tabla(nombre_tabla: str) -> None:
+    if not PATRON_NOMBRE_TABLA.match(nombre_tabla):
+        raise ValueError(
+            f"Nombre de tabla inválido: '{nombre_tabla}'. Debe matchear "
+            "^[a-z][a-z0-9_]{0,62}$"
+        )
+    if not nombre_tabla.startswith(PREFIJO_TABLA_CLIENTE):
+        raise ValueError(
+            f"Nombre de tabla debe iniciar con '{PREFIJO_TABLA_CLIENTE}': "
+            f"'{nombre_tabla}'"
+        )
+    if nombre_tabla == TABLA_METADATOS_JOBS:
+        raise ValueError(
+            f"'{TABLA_METADATOS_JOBS}' está reservada para metadatos, no para cargas"
+        )
+
+
+def _tabla_existe(conn: Connection, nombre_tabla: str) -> bool:
+    consulta = (
+        "SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = %s"
+    )
+    with conn.cursor() as cur:
+        cur.execute(consulta, (nombre_tabla,))
+        return cur.fetchone() is not None
+
+
+def ensure_tabla_cliente(conn: Connection, nombre_tabla: str) -> bool:
+    _validar_nombre_tabla(nombre_tabla)
+    ya_existia = _tabla_existe(conn, nombre_tabla)
+    plantilla = SCHEMA_TEMPLATE_PATH.read_text(encoding="utf-8")
+    ddl = plantilla.replace("{nombre_tabla}", nombre_tabla)
+    with conn.cursor() as cur:
+        cur.execute(ddl)
+    conn.commit()
+    if not ya_existia:
+        logger.info("Tabla creada para nuevo cliente: %s", nombre_tabla)
+    return not ya_existia
+
+
+def _listar_tablas_cargas(conn: Connection) -> list[str]:
+    consulta = (
+        "SELECT tablename FROM pg_tables "
+        "WHERE schemaname = 'public' AND tablename LIKE %s AND tablename <> %s "
+        "ORDER BY tablename"
+    )
+    with conn.cursor() as cur:
+        cur.execute(consulta, (f"{PREFIJO_TABLA_CLIENTE}%", TABLA_METADATOS_JOBS))
+        return [str(fila[0]) for fila in cur.fetchall()]
+
+
+def regenerar_vista_cargas_unificada(conn: Connection) -> int:
+    tablas = _listar_tablas_cargas(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("DROP VIEW IF EXISTS {}").format(sql.Identifier(VISTA_UNIFICADA))
+        )
+        if tablas:
+            partes: list[sql.Composable] = []
+            columnas_select = sql.SQL(", ").join(
+                sql.Identifier(c) for c in COLUMNAS_VISTA_UNIFICADA
+            )
+            for tabla in tablas:
+                origen = tabla[len(PREFIJO_TABLA_CLIENTE):]
+                partes.append(
+                    sql.SQL("SELECT {cols}, {origen} AS tabla_origen FROM {tabla}").format(
+                        cols=columnas_select,
+                        origen=sql.Literal(origen),
+                        tabla=sql.Identifier(tabla),
+                    )
+                )
+            cuerpo = sql.SQL(" UNION ALL ").join(partes)
+            cur.execute(
+                sql.SQL("CREATE VIEW {} AS {}").format(
+                    sql.Identifier(VISTA_UNIFICADA), cuerpo
+                )
+            )
+    conn.commit()
+    logger.info(
+        "Vista cargas_unificada regenerada con %d tablas", len(tablas)
+    )
+    return len(tablas)
 
 
 def _convertir_fila(
@@ -107,9 +220,17 @@ def _convertir_fila(
 
 
 class BulkWriter:
-    def __init__(self, conn: Connection, job_id: str, batch_size: int = 5000) -> None:
+    def __init__(
+        self,
+        conn: Connection,
+        job_id: str,
+        nombre_tabla: str,
+        batch_size: int = 5000,
+    ) -> None:
+        _validar_nombre_tabla(nombre_tabla)
         self._conn: Connection = conn
         self._job_id: str = job_id
+        self._nombre_tabla: str = nombre_tabla
         self._batch_size: int = batch_size
         self._buffer: list[dict[str, str | None]] = []
         self._cerrado: bool = False
@@ -137,8 +258,10 @@ class BulkWriter:
     def _flush(self, lote: list[dict[str, str | None]]) -> None:
         if not lote:
             return
-        columnas = ", ".join(COLUMNAS_CARGAS)
-        sentencia = f"COPY cargas ({columnas}) FROM STDIN"
+        sentencia = sql.SQL("COPY {tabla} ({cols}) FROM STDIN").format(
+            tabla=sql.Identifier(self._nombre_tabla),
+            cols=sql.SQL(", ").join(sql.Identifier(c) for c in COLUMNAS_CARGAS),
+        )
         with self._conn.cursor() as cur:
             with cur.copy(sentencia) as copy:
                 for fila in lote:
